@@ -267,7 +267,7 @@ export default function CreateVaultPage() {
           <li>Double-check the beneficiary address</li>
           <li>Ensure you have enough CKB for the vault + transaction fees</li>
           <li>Remember: funds will be locked until the unlock condition is met</li>
-          <li className="text-red-400 font-semibold">⚠️ IMPORTANT: Timestamp locks cannot be claimed in this MVP version. Please use Block Height for claimable vaults.</li>
+          {/* <li className="text-red-400 font-semibold">⚠️ IMPORTANT: Timestamp locks cannot be claimed in this MVP version. Please use Block Height for claimable vaults.</li> */}
           <li>For block height locks, check the current block height on the CKB explorer before setting your unlock value</li>
         </ul>
       </div>
