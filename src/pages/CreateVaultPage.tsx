@@ -205,20 +205,40 @@ export default function CreateVaultPage() {
 
         <div className="mb-6">
           <label className="block text-sm md:text-base font-medium mb-2">
-            Unlock Value <span className="text-red-500">*</span>
+            {unlockType === "blockHeight" ? "Unlock Block Height" : "Unlock Date & Time"} <span className="text-red-500">*</span>
           </label>
-          <input
-            type="number"
-            value={unlockValue}
-            onChange={(e) => setUnlockValue(e.target.value)}
-            placeholder={unlockType === "blockHeight" ? "e.g. 12345678" : "Unix timestamp (seconds)"}
-            required
-            className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-950 border border-gray-700 rounded-lg text-gray-200 text-sm md:text-base focus:outline-none focus:border-[#00d4aa] transition-colors"
-          />
+          {unlockType === "blockHeight" ? (
+            <input
+              type="number"
+              value={unlockValue}
+              onChange={(e) => setUnlockValue(e.target.value)}
+              placeholder="e.g. 12345678"
+              required
+              className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-950 border border-gray-700 rounded-lg text-gray-200 text-sm md:text-base focus:outline-none focus:border-[#00d4aa] transition-colors"
+            />
+          ) : (
+            <input
+              type="datetime-local"
+              value={unlockValue ? new Date(parseInt(unlockValue) * 1000).toISOString().slice(0, 16) : ""}
+              onChange={(e) => {
+                if (e.target.value) {
+                  const timestamp = Math.floor(new Date(e.target.value).getTime() / 1000);
+                  setUnlockValue(timestamp.toString());
+                } else {
+                  setUnlockValue("");
+                }
+              }}
+              min={new Date().toISOString().slice(0, 16)}
+              required
+              className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-950 border border-gray-700 rounded-lg text-gray-200 text-sm md:text-base focus:outline-none focus:border-[#00d4aa] transition-colors [color-scheme:dark]"
+            />
+          )}
           <div className="text-xs md:text-sm opacity-70 mt-2">
             {unlockType === "blockHeight"
               ? "Block height when the vault unlocks (check current height on explorer)"
-              : `Unix timestamp in seconds (current: ${Math.floor(Date.now() / 1000)})`}
+              : unlockValue 
+                ? `Selected date: ${new Date(parseInt(unlockValue) * 1000).toLocaleString()} (Unix: ${unlockValue})`
+                : "Select the date and time when the vault should unlock"}
           </div>
         </div>
 
