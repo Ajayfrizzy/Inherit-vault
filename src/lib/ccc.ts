@@ -152,20 +152,26 @@ export async function buildClaimVaultTransaction(
     const recipientLock = await getLockScriptFromAddress(recipientAddress, signer);
     
     // Encode the since field based on unlock type
+    // Note: CKB's since validation uses ">" (strictly greater than), not ">=".
+    // To allow claiming at the exact unlock time/block, we subtract 1 from the value.
     let sinceValue: bigint;
     if (unlock.type === "blockHeight") {
       // Absolute block-number lock
       // Format: 0x0000000000000000 | blockHeight
       // The high bit must be 0 for absolute, bit 62 set for block-number metric
-      sinceValue = BigInt(unlock.value);
+      // Subtract 1 so that claiming is possible at exactly the unlock block
+      const adjustedValue = Math.max(0, unlock.value - 1);
+      sinceValue = BigInt(adjustedValue);
     } else {
       // Absolute timestamp lock
       // Format: 0x4000000000000000 | timestamp_in_seconds
       // Bit 63 = 0 (absolute)
       // Bits 62-61 = 10 (timestamp metric)
       // This sets bit 62 only, which is 0x4000000000000000
+      // Subtract 1 second so that claiming is possible at exactly the unlock time
       const TIMESTAMP_FLAG = BigInt("0x4000000000000000");
-      sinceValue = TIMESTAMP_FLAG | BigInt(unlock.value);
+      const adjustedValue = Math.max(0, unlock.value - 1);
+      sinceValue = TIMESTAMP_FLAG | BigInt(adjustedValue);
     }
     
     // Create cell dependency for the vault cell
