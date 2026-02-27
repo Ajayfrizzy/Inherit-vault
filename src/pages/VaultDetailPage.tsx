@@ -1,19 +1,26 @@
 import { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { ccc } from "@ckb-ccc/connector-react";
-import { getVaultById, updateVault, deleteVault } from "../lib/storage";
-import { getTipHeader, getTransactionStatus, isCellLive } from "../lib/ckb";
+import { getVaultByOutPoint, updateVault, deleteVault } from "../lib/storage";
+import { getTipHeader } from "../lib/ckb";
 import { buildClaimVaultTransaction, signAndSendTransaction, isUnlockConditionSatisfied } from "../lib/ccc";
-import { NETWORK_CONFIGS } from "../config";
-import type { VaultRecord } from "../types";
+import { fetchVaultFromTransaction, type VaultFromTx } from "../lib/vaultIndexer";
+import { NETWORK_CONFIGS, DEFAULT_NETWORK } from "../config";
+import { sendVaultClaimableEmail } from "../lib/email";
+import type { VaultRecord, UnlockCondition } from "../types";
 
 export default function VaultDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const { txHash, index: indexParam } = useParams<{ txHash: string; index: string }>();
   const navigate = useNavigate();
   const { wallet } = ccc.useCcc();
   const signer = ccc.useSigner();
 
+  const vaultIndex = parseInt(indexParam || "0", 10);
+  const network = DEFAULT_NETWORK;
+
+  // ── State ─────────────────────────────────────────────────────────────
   const [vault, setVault] = useState<VaultRecord | null>(null);
+  const [onChainData, setOnChainData] = useState<VaultFromTx | null>(null);
   const [loading, setLoading] = useState(true);
   const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState("");
@@ -21,76 +28,122 @@ export default function VaultDetailPage() {
   const [currentTimestamp, setCurrentTimestamp] = useState(0);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [canClaim, setCanClaim] = useState(false);
+  const [verified, setVerified] = useState(false);
 
-  // Load vault and refresh status
+  // ── Load vault data (chain + localStorage cache) ─────────────────────
   useEffect(() => {
-    if (!id) return;
+    if (!txHash) return;
 
-    const loadedVault = getVaultById(id);
-    if (!loadedVault) {
-      setLoading(false);
-      return;
-    }
-
-    setVault(loadedVault);
-
-    // Fetch current chain state and vault status
     (async () => {
       try {
-        const tip = await getTipHeader(loadedVault.network);
+        // Try localStorage first (owner's cached data)
+        const cached = getVaultByOutPoint(txHash, vaultIndex);
+        if (cached) setVault(cached);
+
+        // Fetch from chain (source of truth)
+        const chainResult = await fetchVaultFromTransaction(network, txHash, vaultIndex);
+
+        if (chainResult) {
+          setOnChainData(chainResult);
+          setVerified(true);
+
+          // Build VaultRecord from on-chain data
+          const newStatus: VaultRecord["status"] = chainResult.isLive
+            ? "live"
+            : chainResult.txStatus === "committed"
+            ? "spent"
+            : chainResult.txStatus === "pending" || chainResult.txStatus === "proposed"
+            ? "pending"
+            : "spent";
+
+          const record: VaultRecord = {
+            txHash,
+            index: vaultIndex,
+            network,
+            createdAt: cached?.createdAt || new Date().toISOString(),
+            beneficiaryAddress: cached?.beneficiaryAddress || "",
+            amountCKB: chainResult.capacityCKB,
+            unlock: chainResult.data.unlock,
+            memo: chainResult.data.memo,
+            ownerAddress: chainResult.data.ownerAddress,
+            ownerName: chainResult.data.ownerName,
+            status: newStatus,
+            beneficiaryEmail: cached?.beneficiaryEmail,
+            claimableEmailSent: cached?.claimableEmailSent,
+          };
+          setVault(record);
+
+          // Update localStorage cache if we have a cached version
+          if (cached) updateVault(record);
+        } else if (!cached) {
+          // No data anywhere
+          setVault(null);
+        }
+
+        // Fetch chain tip for unlock check
+        const tip = await getTipHeader(network);
         setCurrentBlockHeight(tip.blockNumber);
         setCurrentTimestamp(tip.timestamp);
 
-        const unlocked = isUnlockConditionSatisfied(
-          loadedVault.unlock,
-          tip.blockNumber,
-          tip.timestamp
-        );
+        const unlock: UnlockCondition = chainResult?.data.unlock || cached?.unlock || { type: "blockHeight", value: 0 };
+        const unlocked = isUnlockConditionSatisfied(unlock, tip.blockNumber, tip.timestamp);
         setIsUnlocked(unlocked);
-
-        // Check transaction status
-        const txStatus = await getTransactionStatus(loadedVault.network, loadedVault.txHash);
-        if (txStatus.tx_status.status === "committed") {
-          // Check if cell is still live
-          const isLive = await isCellLive(loadedVault.network, loadedVault.outPoint);
-          const newStatus: "live" | "spent" = isLive ? "live" : "spent";
-          
-          if (loadedVault.status !== newStatus) {
-            const updated: VaultRecord = { ...loadedVault, status: newStatus };
-            setVault(updated);
-            updateVault(updated);
-          }
-        } else if (txStatus.tx_status.status === "rejected") {
-          const updated: VaultRecord = { ...loadedVault, status: "spent" as const };
-          setVault(updated);
-          updateVault(updated);
-        }
-
       } catch (err) {
-        console.error("Failed to fetch vault status:", err);
+        console.error("Failed to load vault:", err);
       } finally {
         setLoading(false);
       }
     })();
-  }, [id]);
+  }, [txHash, vaultIndex]);
 
-  // Check if current user can claim
+  // ── Check if current user can claim ───────────────────────────────────
   useEffect(() => {
     if (!vault || !signer) {
       setCanClaim(false);
       return;
+
     }
 
     (async () => {
       try {
         const userAddress = await signer.getRecommendedAddress();
         const isBeneficiary = userAddress.toLowerCase() === vault.beneficiaryAddress.toLowerCase();
-        setCanClaim(isBeneficiary && isUnlocked && vault.status === "live");
+        const isLive = onChainData?.isLive ?? vault.status === "live";
+        setCanClaim(isBeneficiary && isUnlocked && isLive);
       } catch {
         setCanClaim(false);
       }
     })();
-  }, [vault, signer, isUnlocked]);
+  }, [vault, signer, isUnlocked, onChainData]);
+
+  // ── Send "Vault Claimable" email when unlock is detected ──────────────
+  useEffect(() => {
+    if (
+      !vault ||
+      !isUnlocked ||
+      !vault.beneficiaryEmail ||
+      vault.claimableEmailSent ||
+      vault.status === "spent"
+    ) {
+      return;
+    }
+
+    sendVaultClaimableEmail({
+      toEmail: vault.beneficiaryEmail,
+      ownerName: vault.ownerName,
+      amountCKB: vault.amountCKB,
+      unlock: vault.unlock,
+      txHash: vault.txHash,
+      index: vault.index,
+      network: vault.network,
+    }).then((sent) => {
+      if (sent) {
+        const updated = { ...vault, claimableEmailSent: true };
+        setVault(updated);
+        updateVault(updated);
+      }
+    });
+  }, [vault?.txHash, isUnlocked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClaim = async () => {
     if (!vault || !signer) return;
@@ -109,19 +162,19 @@ export default function VaultDetailPage() {
       
       const tx = await buildClaimVaultTransaction(
         signer,
-        vault.outPoint,
+        { txHash: vault.txHash, index: vault.index },
         vault.unlock,
         userAddress
       );
 
-      const txHash = await signAndSendTransaction(signer, tx);
+      const claimTxHash = await signAndSendTransaction(signer, tx);
 
       // Update vault status
       const updated = { ...vault, status: "spent" as const };
       setVault(updated);
       updateVault(updated);
 
-      alert(`Claim transaction sent!\nTx Hash: ${txHash}`);
+      alert(`Claim transaction sent!\nTx Hash: ${claimTxHash}`);
     } catch (err: any) {
       console.error("Failed to claim vault:", err);
       
@@ -150,8 +203,8 @@ export default function VaultDetailPage() {
   const handleDelete = () => {
     if (!vault) return;
     
-    if (confirm(`Delete this vault record from localStorage?\nThis will not affect the on-chain state.`)) {
-      deleteVault(vault.id);
+    if (confirm(`Remove this vault from your local list?\nThe on-chain cell is not affected.`)) {
+      deleteVault(vault.txHash, vault.index);
       navigate("/vaults");
     }
   };
@@ -178,7 +231,7 @@ export default function VaultDetailPage() {
       <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-12">
         <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
           <h2 className="text-2xl font-semibold mb-2">Vault Not Found</h2>
-          <p className="opacity-80 mb-4">The vault you're looking for doesn't exist in localStorage.</p>
+          <p className="opacity-80 mb-4">No InheritVault cell found at this transaction.</p>
           <Link to="/vaults">
             <button className="bg-primary hover:bg-primary-hover text-black font-semibold px-6 py-3 rounded-lg transition-colors">
               View All Vaults
@@ -192,12 +245,22 @@ export default function VaultDetailPage() {
   const explorerUrl = `${NETWORK_CONFIGS[vault.network].explorerTxUrl}${vault.txHash}`;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-12">
+    <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-12 text-[#00d4aa]">
       <div className="mb-6 md:mb-8">
         <Link to="/vaults" className="text-sm md:text-base text-[#00d4aa] hover:underline transition-colors">
           ← Back to Vaults
         </Link>
       </div>
+
+      {/* On-chain verification badge */}
+      {verified && (
+        <div className="flex items-center gap-2 mb-4 bg-green-900 bg-opacity-20 border border-green-700 rounded-lg px-4 py-2">
+          <span className="inline-block w-3 h-3 rounded-full bg-green-500" />
+          <span className="text-green-400 text-sm font-semibold">
+            ✓ Verified on-chain — this vault's data is read directly from the CKB blockchain
+          </span>
+        </div>
+      )}
 
       <h1 className="text-2xl md:text-4xl font-bold mb-6 md:mb-8 flex flex-wrap items-center gap-4">
         <span>Vault Detail</span>
@@ -213,10 +276,25 @@ export default function VaultDetailPage() {
         </div>
 
         <div className="space-y-6">
+          {/* Owner / Creator info */}
+          {(vault.ownerName || vault.ownerAddress) && (
+            <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+              <div className="text-xs md:text-sm opacity-70 mb-2">Created By</div>
+              {vault.ownerName && (
+                <div className="text-lg font-semibold mb-1">{vault.ownerName}</div>
+              )}
+              {vault.ownerAddress && (
+                <div className="font-mono text-xs md:text-sm break-all opacity-80">
+                  {vault.ownerAddress}
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <div className="text-xs md:text-sm opacity-70 mb-2">Beneficiary Address</div>
             <div className="font-mono text-xs md:text-sm break-all">
-              {vault.beneficiaryAddress}
+              {vault.beneficiaryAddress || "(read from cell lock script)"}
             </div>
           </div>
 

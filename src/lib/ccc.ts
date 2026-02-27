@@ -11,6 +11,8 @@
 
 import type { ccc } from "@ckb-ccc/connector-react";
 import type { UnlockCondition } from "../types";
+import { encodeVaultCellData } from "./codec";
+import type { IndexerScript } from "./vaultIndexer";
 
 // ============================================================================
 // WALLET CONNECTION & ADDRESS
@@ -61,38 +63,70 @@ export async function getLockScriptFromAddress(
   }
 }
 
+/**
+ * Get the lock script for a CKB address in the RPC/Indexer snake_case format.
+ * Useful for indexer queries.
+ */
+export async function getLockScriptForIndexer(
+  address: string,
+  signer: any
+): Promise<IndexerScript> {
+  const { ccc } = await import("@ckb-ccc/connector-react");
+  const addressObj = await ccc.Address.fromString(address, signer.client);
+  const script = addressObj.script;
+  return {
+    code_hash: script.codeHash,
+    hash_type: script.hashType,
+    args: script.args,
+  };
+}
+
 // ============================================================================
 // TRANSACTION BUILDING – CREATE VAULT
 // ============================================================================
 
 /**
  * Build a transaction that creates a vault cell.
- * 
+ *
  * The vault cell:
  *  - Has the beneficiary's lock script
  *  - Contains the specified amount of CKB in capacity
- *  - Has a "since" constraint encoding the timelock
- * 
+ *  - Stores vault metadata (owner, unlock condition, memo) in output_data
+ *
  * @param signer - The CCC signer (creator/funder of the vault)
  * @param beneficiaryAddress - CKB address of the person who can claim
- * @param amountCKB - Amount to lock (in CKB, e.g. 200)
+ * @param amountCKB - Amount to lock (in CKB, e.g. 250)
  * @param unlock - The timelock condition
- * @returns An object with { tx, outPointIndex } where outPointIndex is the index of the vault cell
+ * @param ownerAddress - CKB address of the vault creator
+ * @param ownerName - Optional display name of the creator
+ * @param memo - Optional memo stored on-chain
+ * @returns An object with { tx, outPointIndex }
  */
 export async function buildCreateVaultTransaction(
   signer: any,
   beneficiaryAddress: string,
   amountCKB: number,
-  unlock: UnlockCondition
+  unlock: UnlockCondition,
+  ownerAddress: string,
+  ownerName?: string,
+  memo?: string
 ): Promise<{ tx: any; outPointIndex: number }> {
-  
+
   try {
     const { ccc } = await import("@ckb-ccc/connector-react");
-    
+
     // Get beneficiary lock script from address
     const beneficiaryLock = await getLockScriptFromAddress(beneficiaryAddress, signer);
-    
-    // Create transaction with vault output
+
+    // Encode vault metadata into cell data
+    const cellData = encodeVaultCellData({
+      ownerAddress,
+      ownerName: ownerName || undefined,
+      unlock,
+      memo: memo || undefined,
+    });
+
+    // Create transaction with vault output + on-chain data
     const tx = ccc.Transaction.from({
       outputs: [
         {
@@ -100,17 +134,13 @@ export async function buildCreateVaultTransaction(
           capacity: ccc.fixedPointFrom(amountCKB),
         },
       ],
+      outputsData: [cellData],
     });
 
-    // Note: The timelock is enforced via "since" field on inputs when claiming,
-    // not when creating. The vault cell itself doesn't have special lock logic.
-    // For production, you'd use a custom lock script that enforces both
-    // beneficiary authorization AND timelock conditions.
-    
     // Complete inputs from creator's wallet to cover capacity + fees
     await tx.completeInputsByCapacity(signer);
     await tx.completeFeeBy(signer);
-    
+
     // The vault output is the first output (index 0)
     return { tx, outPointIndex: 0 };
 

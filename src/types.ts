@@ -27,16 +27,27 @@ export interface OutPoint {
 }
 
 // ---------------------------------------------------------------------------
-// Vault record – stored in localStorage
+// Vault record – lightweight reference stored in localStorage.
+// The real vault data lives on-chain in the cell's output_data.
+// This record is an *index* the owner keeps so they can quickly find their
+// created vaults without scanning the entire chain.
 // ---------------------------------------------------------------------------
 export interface VaultRecord {
-  /** Unique identifier generated client-side (UUID-like). */
-  id: string;
+  /** Transaction hash of the create-vault transaction. */
+  txHash: string;
+
+  /** Output index of the vault cell within the transaction. */
+  index: number;
 
   /** Network on which the vault was created. */
   network: Network;
 
-  /** CKB address of the beneficiary (lock args owner who can claim). */
+  /** ISO-8601 timestamp of when the vault was created locally. */
+  createdAt: string;
+
+  // ── Cached on-chain data (for display while tx is pending / offline) ──
+
+  /** CKB address of the beneficiary. */
   beneficiaryAddress: string;
 
   /** Amount locked in the vault, in CKB (decimal string, e.g. "200"). */
@@ -45,17 +56,24 @@ export interface VaultRecord {
   /** Timelock condition. */
   unlock: UnlockCondition;
 
-  /** Optional human-readable memo (stored locally only). */
+  /** Optional memo stored in cell data on-chain. */
   memo?: string;
 
-  /** Transaction hash of the create-vault transaction. */
-  txHash: string;
+  /** Beneficiary email for notifications (stored locally, NOT on-chain). */
+  beneficiaryEmail?: string;
 
-  /** OutPoint of the vault cell (txHash:index). */
-  outPoint: OutPoint;
+  /** Whether a "vault claimable" email has been sent (prevents duplicates). */
+  claimableEmailSent?: boolean;
 
-  /** ISO-8601 timestamp of when the vault record was saved locally. */
-  createdAt: string;
+  // ── Owner profile (stored in cell data on-chain) ──
+
+  /** Owner's CKB address (the wallet that funded the vault). */
+  ownerAddress?: string;
+
+  /** Owner's chosen display name. */
+  ownerName?: string;
+
+  // ── Status cache ──
 
   /**
    * Cached status (refreshed when the vault detail page is viewed).

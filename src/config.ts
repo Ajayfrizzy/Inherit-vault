@@ -29,7 +29,18 @@ export const NETWORK_CONFIGS: Record<Network, NetworkConfig> = {
 
 export const DEFAULT_NETWORK: Network = "testnet";
 
-// Minimum CKB capacity for a cell that holds a CKB address string in data
-// (61 bytes lock + 8 bytes capacity + ~50 bytes data ≈ 119 bytes → 119 CKB minimum).
-// We use 200 CKB as a safe minimum for vault cells.
-export const MIN_VAULT_CKB = 200;
+// Minimum CKB capacity for a vault cell.
+// Cell overhead ≈ 61 bytes (8 capacity + 53 lock script).
+// Vault data ≈ 80-200 bytes (magic + version + JSON payload).
+// Total ≈ 141-261 bytes → 141-261 CKB minimum.
+// We set 250 CKB as the safe floor; the UI calculates the exact minimum
+// dynamically based on the data payload size.
+export const MIN_VAULT_CKB = 250;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Email notifications (Resend via Vercel serverless function)
+// In production on Vercel this defaults to "/api/send-email".
+// For local dev, set VITE_EMAIL_API_URL in .env.
+// ─────────────────────────────────────────────────────────────────────────────
+export const EMAIL_API_URL =
+  import.meta.env.VITE_EMAIL_API_URL ?? "/api/send-email";

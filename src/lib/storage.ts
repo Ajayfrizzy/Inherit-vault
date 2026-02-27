@@ -1,12 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// InheritVault – localStorage persistence
+// InheritVault – localStorage persistence (v2)
+//
+// localStorage now stores lightweight *references* to vaults the owner
+// created. The actual vault data lives on-chain (cell output_data).
+// This index lets the owner quickly list their vaults without scanning the
+// entire chain.  If the owner clears localStorage they can re-import vaults
+// by transaction hash.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { VaultRecord } from "../types";
 
-const STORAGE_KEY = "inherit_vault_records_v1";
+const STORAGE_KEY = "inherit_vault_refs_v2";
+const OWNER_NAME_KEY = "inherit_vault_owner_name";
 
-/** Load all vault records from localStorage (returns [] if none / parse error). */
+// ── Vault reference CRUD ────────────────────────────────────────────────────
+
+/** Load all vault references from localStorage (returns [] on error). */
 export function loadVaults(): VaultRecord[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -17,39 +26,55 @@ export function loadVaults(): VaultRecord[] {
   }
 }
 
-/** Persist the full list of vault records to localStorage. */
+/** Persist the full list. */
 function saveVaults(vaults: VaultRecord[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(vaults));
 }
 
-/** Append a new vault record. Returns the updated list. */
+/** Add a new vault reference (newest first). */
 export function addVault(record: VaultRecord): VaultRecord[] {
   const vaults = loadVaults();
-  vaults.unshift(record); // newest first
+  vaults.unshift(record);
   saveVaults(vaults);
   return vaults;
 }
 
-/** Retrieve a single vault record by its id. */
-export function getVaultById(id: string): VaultRecord | undefined {
-  return loadVaults().find((v) => v.id === id);
+/** Find a vault by its on-chain outpoint (txHash + index). */
+export function getVaultByOutPoint(
+  txHash: string,
+  index: number
+): VaultRecord | undefined {
+  return loadVaults().find(
+    (v) => v.txHash === txHash && v.index === index
+  );
 }
 
-/** Update an existing vault record (matched by id). */
+/** Update an existing vault (matched by txHash + index). */
 export function updateVault(updated: VaultRecord): VaultRecord[] {
-  const vaults = loadVaults().map((v) => (v.id === updated.id ? updated : v));
+  const vaults = loadVaults().map((v) =>
+    v.txHash === updated.txHash && v.index === updated.index ? updated : v
+  );
   saveVaults(vaults);
   return vaults;
 }
 
-/** Remove a vault record by id. */
-export function deleteVault(id: string): VaultRecord[] {
-  const vaults = loadVaults().filter((v) => v.id !== id);
+/** Remove a vault by its outpoint. */
+export function deleteVault(txHash: string, index: number): VaultRecord[] {
+  const vaults = loadVaults().filter(
+    (v) => !(v.txHash === txHash && v.index === index)
+  );
   saveVaults(vaults);
   return vaults;
 }
 
-/** Generate a simple unique id (timestamp + random hex). */
-export function generateId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+// ── Owner profile helpers ───────────────────────────────────────────────────
+
+/** Get the saved owner display name (persists across sessions). */
+export function getOwnerName(): string {
+  return localStorage.getItem(OWNER_NAME_KEY) ?? "";
+}
+
+/** Save the owner display name. */
+export function setOwnerName(name: string): void {
+  localStorage.setItem(OWNER_NAME_KEY, name);
 }

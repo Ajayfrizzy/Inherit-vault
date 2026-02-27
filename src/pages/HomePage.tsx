@@ -57,7 +57,12 @@ export default function HomePage() {
               </Link>
               <Link to="/vaults">
                 <button className="w-full sm:w-auto bg-gray-800 hover:bg-gray-700 px-6 py-3 rounded-lg border border-[#00d4aa] text-[#00d4aa] cursor-pointer transition-colors">
-                  View Vaults
+                  My Vaults
+                </button>
+              </Link>
+              <Link to="/beneficiary">
+                <button className="w-full sm:w-auto bg-gray-800 hover:bg-gray-700 px-6 py-3 rounded-lg border border-[#00d4aa] text-[#00d4aa] cursor-pointer transition-colors">
+                  Beneficiary Dashboard
                 </button>
               </Link>
             </div>
@@ -89,7 +94,10 @@ export default function HomePage() {
             </ul>
           </li>
           <li>
-            <strong>The vault is created on-chain</strong> as a cell that can only be spent by the beneficiary after the unlock time
+            <strong>The vault is created on-chain</strong> as a cell with the beneficiary's lock – all metadata (owner, unlock condition, memo) is stored in the cell data
+          </li>
+          <li>
+            <strong>The beneficiary can see pending vaults</strong> by connecting their wallet on the Beneficiary Dashboard – vaults are verified directly from the blockchain
           </li>
           <li>
             <strong>The beneficiary claims</strong> the funds after the unlock condition is met
@@ -101,7 +109,8 @@ export default function HomePage() {
         <h2 className="text-xl md:text-2xl font-semibold mb-4">⚠️ Important Notes</h2>
         <ul className="space-y-2 md:space-y-3 pl-5 list-disc text-sm md:text-base leading-relaxed">
           <li>This is an <strong>MVP demonstration</strong> – use testnet only</li>
-          <li>Vault records are stored in your browser's localStorage</li>
+          <li>Vault data is stored <strong>on-chain</strong> in cell output data – no more localStorage dependency</li>
+          <li>Beneficiaries can <strong>verify any vault</strong> by checking its transaction hash on-chain</li>
           <li>The beneficiary must have access to their wallet to claim</li>
           <li>Transaction fees apply when creating and claiming vaults</li>
           <li>Double-check the beneficiary address before creating a vault</li>

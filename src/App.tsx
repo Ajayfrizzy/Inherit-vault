@@ -5,6 +5,7 @@ import HomePage from "./pages/HomePage";
 import CreateVaultPage from "./pages/CreateVaultPage";
 import VaultListPage from "./pages/VaultListPage";
 import VaultDetailPage from "./pages/VaultDetailPage";
+import BeneficiaryPage from "./pages/BeneficiaryPage";
 
 export default function App() {
   const { open, wallet, disconnect } = ccc.useCcc();
@@ -28,6 +29,9 @@ export default function App() {
               </Link>
               <Link to="/vaults" className="hover:text-primary transition-colors hover:underline">
                 My Vaults
+              </Link>
+              <Link to="/beneficiary" className="hover:text-primary transition-colors hover:underline">
+                Beneficiary
               </Link>
             </nav>
 
@@ -103,6 +107,13 @@ export default function App() {
               >
                 My Vaults
               </Link>
+              <Link 
+                to="/beneficiary" 
+                className="text-[#00d4aa] hover:text-primary transition-colors hover:underline"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Beneficiary Dashboard
+              </Link>
             </nav>
 
             <div className="border-t border-gray-700 pt-4">
@@ -142,7 +153,8 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/create" element={<CreateVaultPage />} />
           <Route path="/vaults" element={<VaultListPage />} />
-          <Route path="/vault/:id" element={<VaultDetailPage />} />
+          <Route path="/vault/:txHash/:index" element={<VaultDetailPage />} />
+          <Route path="/beneficiary" element={<BeneficiaryPage />} />
         </Routes>
       </main>
 
