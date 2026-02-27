@@ -1,7 +1,11 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { loadVaults, addVault } from "../lib/storage";
+import { loadVaults, addVault, updateVault } from "../lib/storage";
 import { fetchVaultFromTransaction } from "../lib/vaultIndexer";
+import { getTipHeader } from "../lib/ckb";
+import { isUnlockConditionSatisfied } from "../lib/ccc";
+import { sendVaultClaimableEmail } from "../lib/email";
+import { DEFAULT_NETWORK } from "../config";
 import type { VaultRecord } from "../types";
 
 export default function VaultListPage() {
@@ -46,6 +50,41 @@ export default function VaultListPage() {
         }
       }
       if (changed) setVaults(updated);
+
+      // ── Check for newly claimable vaults & send email notifications ──
+      try {
+        const tip = await getTipHeader(DEFAULT_NETWORK);
+        for (const v of updated) {
+          if (
+            v.beneficiaryEmail &&
+            !v.claimableEmailSent &&
+            v.status === "live" &&
+            isUnlockConditionSatisfied(v.unlock, tip.blockNumber, tip.timestamp)
+          ) {
+            sendVaultClaimableEmail({
+              toEmail: v.beneficiaryEmail,
+              ownerName: v.ownerName,
+              amountCKB: v.amountCKB,
+              unlock: v.unlock,
+              txHash: v.txHash,
+              index: v.index,
+              network: v.network,
+            }).then((sent) => {
+              if (sent) {
+                const updated = { ...v, claimableEmailSent: true };
+                updateVault(updated);
+                setVaults((prev) =>
+                  prev.map((p) =>
+                    p.txHash === v.txHash && p.index === v.index ? updated : p
+                  )
+                );
+              }
+            });
+          }
+        }
+      } catch {
+        // non-critical — skip if tip fetch fails
+      }
     })();
   }, []);
 
