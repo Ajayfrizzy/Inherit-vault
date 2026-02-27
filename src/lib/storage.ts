@@ -78,3 +78,32 @@ export function getOwnerName(): string {
 export function setOwnerName(name: string): void {
   localStorage.setItem(OWNER_NAME_KEY, name);
 }
+
+// ── Beneficiary hidden vaults ───────────────────────────────────────────────
+
+const HIDDEN_VAULTS_KEY = "inherit_vault_hidden";
+
+/** Get the set of hidden vault outpoint keys ("txHash:index"). */
+export function getHiddenVaults(): Set<string> {
+  try {
+    const raw = localStorage.getItem(HIDDEN_VAULTS_KEY);
+    if (!raw) return new Set();
+    return new Set(JSON.parse(raw) as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+/** Hide a vault from the beneficiary dashboard. */
+export function hideVault(txHash: string, index: number): void {
+  const hidden = getHiddenVaults();
+  hidden.add(`${txHash}:${index}`);
+  localStorage.setItem(HIDDEN_VAULTS_KEY, JSON.stringify([...hidden]));
+}
+
+/** Unhide a vault (restore it). */
+export function unhideVault(txHash: string, index: number): void {
+  const hidden = getHiddenVaults();
+  hidden.delete(`${txHash}:${index}`);
+  localStorage.setItem(HIDDEN_VAULTS_KEY, JSON.stringify([...hidden]));
+}

@@ -13,6 +13,7 @@ import { Link } from "react-router-dom";
 import { ccc } from "@ckb-ccc/connector-react";
 import { DEFAULT_NETWORK, NETWORK_CONFIGS } from "../config";
 import { getLockScriptForIndexer } from "../lib/ccc";
+import { getHiddenVaults, hideVault, unhideVault } from "../lib/storage";
 import {
   fetchVaultsForLockScript,
   verifyVault,
@@ -28,6 +29,8 @@ export default function BeneficiaryPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [address, setAddress] = useState("");
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(getHiddenVaults());
+  const [showHidden, setShowHidden] = useState(false);
 
   // ── Verify section state ──────────────────────────────────────────────
   const [verifyTxHash, setVerifyTxHash] = useState("");
@@ -107,6 +110,28 @@ export default function BeneficiaryPage() {
   const explorerTxUrl = (txHash: string) =>
     `${NETWORK_CONFIGS[DEFAULT_NETWORK].explorerTxUrl}${txHash}`;
 
+  const vaultKey = (v: OnChainVault) => `${v.outPoint.txHash}:${v.outPoint.index}`;
+
+  const visibleVaults = showHidden
+    ? vaults
+    : vaults.filter((v) => !hiddenKeys.has(vaultKey(v)));
+
+  const hiddenCount = vaults.filter((v) => hiddenKeys.has(vaultKey(v))).length;
+
+  const handleHide = (v: OnChainVault, e: React.MouseEvent) => {
+    e.preventDefault(); // prevent Link navigation
+    e.stopPropagation();
+    hideVault(v.outPoint.txHash, v.outPoint.index);
+    setHiddenKeys(new Set(getHiddenVaults()));
+  };
+
+  const handleUnhide = (v: OnChainVault, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    unhideVault(v.outPoint.txHash, v.outPoint.index);
+    setHiddenKeys(new Set(getHiddenVaults()));
+  };
+
   // ── Not connected ─────────────────────────────────────────────────────
   if (!wallet) {
     return (
@@ -179,17 +204,31 @@ export default function BeneficiaryPage() {
 
       {!loading && vaults.length > 0 && (
         <>
-          <h2 className="text-xl md:text-2xl font-semibold mb-4">
-            Your Vaults ({vaults.length})
-          </h2>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4">
+            <h2 className="text-xl md:text-2xl font-semibold">
+              Your Vaults ({visibleVaults.length})
+            </h2>
+            {hiddenCount > 0 && (
+              <button
+                onClick={() => setShowHidden(!showHidden)}
+                className="text-xs text-[#00d4aa] opacity-70 hover:opacity-100 transition-opacity"
+              >
+                {showHidden ? "Hide dismissed" : `Show ${hiddenCount} dismissed`}
+              </button>
+            )}
+          </div>
           <div className="space-y-4 mb-8">
-            {vaults.map((v) => (
+            {visibleVaults.map((v) => {
+              const isHidden = hiddenKeys.has(vaultKey(v));
+              return (
               <Link
                 key={`${v.outPoint.txHash}-${v.outPoint.index}`}
                 to={`/vault/${v.outPoint.txHash}/${v.outPoint.index}`}
                 className="block"
               >
-                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 md:p-6 hover:border-[#00d4aa] transition-all">
+                <div className={`bg-gray-800 border rounded-lg p-4 md:p-6 transition-all ${
+                  isHidden ? "border-gray-600 opacity-50" : "border-gray-700 hover:border-[#00d4aa]"
+                }`}>
                   <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-4">
                     <div className="flex-1">
                       <h3 className="text-xl md:text-2xl font-semibold mb-1">
@@ -199,10 +238,29 @@ export default function BeneficiaryPage() {
                         <p className="text-sm opacity-70">{v.data.memo}</p>
                       )}
                     </div>
-                    <span className="text-xs md:text-sm text-green-500 flex items-center gap-1">
-                      <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
-                      On-Chain Verified
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs md:text-sm text-green-500 flex items-center gap-1">
+                        <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
+                        On-Chain Verified
+                      </span>
+                      {isHidden ? (
+                        <button
+                          onClick={(e) => handleUnhide(v, e)}
+                          className="text-xs text-[#00d4aa] hover:underline opacity-70 hover:opacity-100"
+                          title="Restore this vault"
+                        >
+                          Restore
+                        </button>
+                      ) : (
+                        <button
+                          onClick={(e) => handleHide(v, e)}
+                          className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+                          title="Dismiss this vault"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
@@ -223,7 +281,8 @@ export default function BeneficiaryPage() {
                   </div>
                 </div>
               </Link>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
