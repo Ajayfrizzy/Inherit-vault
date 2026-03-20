@@ -122,7 +122,7 @@ export default function VaultListPage() {
         index: 0,
         network: "testnet",
         createdAt: new Date().toISOString(),
-        beneficiaryAddress: "", // will be resolved from chain
+        beneficiaryAddress: result.beneficiaryAddress,
         amountCKB: result.capacityCKB,
         unlock: result.data.unlock,
         memo: result.data.memo,

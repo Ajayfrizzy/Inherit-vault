@@ -1,6 +1,6 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// InheritVault – CKB RPC + Indexer queries
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// InheritVault - CKB RPC + CCC transaction queries
+// -----------------------------------------------------------------------------
 
 import type {
   CkbCell,
@@ -35,6 +35,72 @@ async function rpcCall(
   return json.result;
 }
 
+async function getPublicClient(network: Network): Promise<any> {
+  const { ccc } = await import("@ckb-ccc/connector-react");
+  return network === "testnet"
+    ? new ccc.ClientPublicTestnet()
+    : new ccc.ClientPublicMainnet();
+}
+
+function toRpcHex(value: bigint | number): string {
+  return `0x${BigInt(value).toString(16)}`;
+}
+
+function toRpcOutPoint(outPoint: OutPoint) {
+  return {
+    tx_hash: outPoint.txHash,
+    index: toRpcHex(outPoint.index),
+  };
+}
+
+function normalizeScript(script: any) {
+  if (!script) return null;
+  return {
+    code_hash: script.codeHash,
+    hash_type: script.hashType,
+    args: script.args,
+  };
+}
+
+function normalizeCellOutput(output: any) {
+  return {
+    capacity: toRpcHex(output.capacity),
+    lock: normalizeScript(output.lock),
+    type: normalizeScript(output.type),
+  };
+}
+
+function normalizeTransactionResponse(
+  txHash: string,
+  response: any
+): CkbTransactionStatus {
+  return {
+    transaction: {
+      hash: txHash,
+      outputs: response.transaction.outputs.map(normalizeCellOutput),
+      outputs_data: response.transaction.outputsData.map((data: string) => data ?? "0x"),
+    },
+    tx_status: {
+      status: response.status,
+      block_hash: response.blockHash ?? null,
+      block_number: response.blockNumber != null ? toRpcHex(response.blockNumber) : null,
+      reason: response.reason ?? null,
+    },
+  };
+}
+
+function normalizeLiveCell(outPoint: OutPoint, liveCell: any): CkbCell | null {
+  if (liveCell?.status !== "live" || !liveCell.cell?.output) {
+    return null;
+  }
+
+  return {
+    output: liveCell.cell.output,
+    output_data: liveCell.cell.data?.content ?? "0x",
+    out_point: toRpcOutPoint(outPoint),
+  };
+}
+
 /**
  * Get the current tip header (block number + timestamp).
  */
@@ -49,108 +115,70 @@ export async function getTipHeader(network: Network): Promise<TipHeader> {
 
 /**
  * Get transaction status (to check if a vault tx is confirmed).
+ * Uses CCC's getTransaction first, then falls back to raw RPC.
  */
 export async function getTransactionStatus(
   network: Network,
   txHash: string
 ): Promise<CkbTransactionStatus> {
+  try {
+    const client = await getPublicClient(network);
+    const response = await client.getTransaction(txHash);
+    if (response) {
+      return normalizeTransactionResponse(txHash, response);
+    }
+  } catch (error) {
+    console.error("CCC transaction lookup failed, falling back to RPC:", error);
+  }
+
   const { rpcUrl } = NETWORK_CONFIGS[network];
-  return await rpcCall(rpcUrl, "get_transaction", [txHash]);
+  return rpcCall(rpcUrl, "get_transaction", [txHash]);
 }
 
 /**
- * Query a cell by OutPoint using the Indexer.
+ * Query a specific live cell by OutPoint.
  * Returns null if the cell has been spent or doesn't exist.
  */
 export async function getCellByOutPoint(
   network: Network,
   outPoint: OutPoint
 ): Promise<CkbCell | null> {
-  const { indexerUrl } = NETWORK_CONFIGS[network];
-  
   try {
-    const response = await fetch(indexerUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: Date.now(),
-        method: "get_cells",
-        params: [
-          {
-            script: null, // We'll search by outpoint instead
-            script_type: "lock",
-            filter: {
-              script: null,
-              output_data_len_range: null,
-              output_capacity_range: null,
-              block_range: null,
-            },
-            // Note: Some indexers support searching by outpoint directly
-            // For a more robust approach, we query all cells and filter
-          },
-          "asc",
-          "0x64", // limit 100
-        ],
-      }),
-    });
-
-    const json = await response.json();
-    if (json.error) {
-      throw new Error(json.error.message);
-    }
-
-    const cells = json.result?.objects || [];
-    // Find the cell matching our outpoint
-    const match = cells.find(
-      (cell: CkbCell) =>
-        cell.out_point.tx_hash === outPoint.txHash &&
-        parseInt(cell.out_point.index, 16) === outPoint.index
-    );
-
-    return match || null;
+    const { rpcUrl } = NETWORK_CONFIGS[network];
+    const liveCell = await rpcCall(rpcUrl, "get_live_cell", [
+      toRpcOutPoint(outPoint),
+      true,
+    ]);
+    return normalizeLiveCell(outPoint, liveCell);
   } catch {
-    // If indexer query fails, fall back to RPC method
-    return await getCellByOutPointViaRpc(network, outPoint);
+    return getCellByOutPointViaTransaction(network, outPoint);
   }
 }
 
 /**
- * Fallback: get cell via RPC by fetching the transaction and checking outputs.
+ * Fallback: inspect the output in the originating transaction via CCC/RPC.
  */
-async function getCellByOutPointViaRpc(
+async function getCellByOutPointViaTransaction(
   network: Network,
   outPoint: OutPoint
 ): Promise<CkbCell | null> {
-  const { rpcUrl } = NETWORK_CONFIGS[network];
-  
   try {
-    const txStatus: CkbTransactionStatus = await rpcCall(
-      rpcUrl,
-      "get_transaction",
-      [outPoint.txHash]
-    );
+    const txStatus = await getTransactionStatus(network, outPoint.txHash);
 
     if (!txStatus.transaction) {
-      return null; // tx not found
+      return null;
     }
 
     const output = txStatus.transaction.outputs[outPoint.index];
     const outputData = txStatus.transaction.outputs_data[outPoint.index];
-
     if (!output) {
       return null;
     }
 
-    // Check if this cell has been spent by querying live cells
-    // For MVP, we'll return the cell structure; actual "live" check requires indexer
     return {
       output,
       output_data: outputData || "0x",
-      out_point: {
-        tx_hash: outPoint.txHash,
-        index: `0x${outPoint.index.toString(16)}`,
-      },
+      out_point: toRpcOutPoint(outPoint),
     };
   } catch {
     return null;
@@ -159,21 +187,17 @@ async function getCellByOutPointViaRpc(
 
 /**
  * Determine if a cell is currently unspent.
- * This is a simplified check – in production you'd use get_live_cell RPC.
  */
 export async function isCellLive(
   network: Network,
   outPoint: OutPoint
 ): Promise<boolean> {
   const { rpcUrl } = NETWORK_CONFIGS[network];
-  
+
   try {
     const result = await rpcCall(rpcUrl, "get_live_cell", [
-      {
-        tx_hash: outPoint.txHash,
-        index: `0x${outPoint.index.toString(16)}`,
-      },
-      true, // with_data
+      toRpcOutPoint(outPoint),
+      true,
     ]);
     return result.status === "live";
   } catch {

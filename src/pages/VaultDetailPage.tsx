@@ -3,7 +3,11 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { ccc } from "@ckb-ccc/connector-react";
 import { getVaultByOutPoint, updateVault, deleteVault } from "../lib/storage";
 import { getTipHeader } from "../lib/ckb";
-import { buildClaimVaultTransaction, signAndSendTransaction, isUnlockConditionSatisfied } from "../lib/ccc";
+import {
+  buildClaimVaultTransaction,
+  signAndSendTransaction,
+  isUnlockConditionSatisfied,
+} from "../lib/ccc";
 import { fetchVaultFromTransaction, type VaultFromTx } from "../lib/vaultIndexer";
 import { NETWORK_CONFIGS, DEFAULT_NETWORK } from "../config";
 import { sendVaultClaimableEmail } from "../lib/email";
@@ -18,7 +22,6 @@ export default function VaultDetailPage() {
   const vaultIndex = parseInt(indexParam || "0", 10);
   const network = DEFAULT_NETWORK;
 
-  // ── State ─────────────────────────────────────────────────────────────
   const [vault, setVault] = useState<VaultRecord | null>(null);
   const [onChainData, setOnChainData] = useState<VaultFromTx | null>(null);
   const [loading, setLoading] = useState(true);
@@ -30,38 +33,35 @@ export default function VaultDetailPage() {
   const [canClaim, setCanClaim] = useState(false);
   const [verified, setVerified] = useState(false);
 
-  // ── Load vault data (chain + localStorage cache) ─────────────────────
   useEffect(() => {
     if (!txHash) return;
 
     (async () => {
       try {
-        // Try localStorage first (owner's cached data)
         const cached = getVaultByOutPoint(txHash, vaultIndex);
         if (cached) setVault(cached);
 
-        // Fetch from chain (source of truth)
         const chainResult = await fetchVaultFromTransaction(network, txHash, vaultIndex);
 
         if (chainResult) {
           setOnChainData(chainResult);
           setVerified(true);
 
-          // Build VaultRecord from on-chain data
           const newStatus: VaultRecord["status"] = chainResult.isLive
             ? "live"
             : chainResult.txStatus === "committed"
-            ? "spent"
-            : chainResult.txStatus === "pending" || chainResult.txStatus === "proposed"
-            ? "pending"
-            : "spent";
+              ? "spent"
+              : chainResult.txStatus === "pending" || chainResult.txStatus === "proposed"
+                ? "pending"
+                : "spent";
 
           const record: VaultRecord = {
             txHash,
             index: vaultIndex,
             network,
             createdAt: cached?.createdAt || new Date().toISOString(),
-            beneficiaryAddress: cached?.beneficiaryAddress || "",
+            beneficiaryAddress:
+              chainResult.beneficiaryAddress || cached?.beneficiaryAddress || "",
             amountCKB: chainResult.capacityCKB,
             unlock: chainResult.data.unlock,
             memo: chainResult.data.memo,
@@ -73,41 +73,38 @@ export default function VaultDetailPage() {
           };
           setVault(record);
 
-          // Update localStorage cache if we have a cached version
           if (cached) updateVault(record);
         } else if (!cached) {
-          // No data anywhere
           setVault(null);
         }
 
-        // Fetch chain tip for unlock check
         const tip = await getTipHeader(network);
         setCurrentBlockHeight(tip.blockNumber);
         setCurrentTimestamp(tip.timestamp);
 
-        const unlock: UnlockCondition = chainResult?.data.unlock || cached?.unlock || { type: "blockHeight", value: 0 };
-        const unlocked = isUnlockConditionSatisfied(unlock, tip.blockNumber, tip.timestamp);
-        setIsUnlocked(unlocked);
+        const unlock: UnlockCondition =
+          chainResult?.data.unlock || cached?.unlock || { type: "blockHeight", value: 0 };
+        setIsUnlocked(isUnlockConditionSatisfied(unlock, tip.blockNumber, tip.timestamp));
       } catch (err) {
         console.error("Failed to load vault:", err);
       } finally {
         setLoading(false);
       }
     })();
-  }, [txHash, vaultIndex]);
+  }, [txHash, vaultIndex, network]);
 
-  // ── Check if current user can claim ───────────────────────────────────
   useEffect(() => {
     if (!vault || !signer) {
       setCanClaim(false);
       return;
-
     }
 
     (async () => {
       try {
         const userAddress = await signer.getRecommendedAddress();
-        const isBeneficiary = userAddress.toLowerCase() === vault.beneficiaryAddress.toLowerCase();
+        const isBeneficiary =
+          !!vault.beneficiaryAddress &&
+          userAddress.toLowerCase() === vault.beneficiaryAddress.toLowerCase();
         const isLive = onChainData?.isLive ?? vault.status === "live";
         setCanClaim(isBeneficiary && isUnlocked && isLive);
       } catch {
@@ -116,7 +113,6 @@ export default function VaultDetailPage() {
     })();
   }, [vault, signer, isUnlocked, onChainData]);
 
-  // ── Send "Vault Claimable" email when unlock is detected ──────────────
   useEffect(() => {
     if (
       !vault ||
@@ -148,7 +144,6 @@ export default function VaultDetailPage() {
   const handleClaim = async () => {
     if (!vault || !signer) return;
 
-    // Double-check unlock condition is satisfied
     if (!isUnlocked) {
       setError("The vault is not yet unlocked. Please wait until the unlock condition is met.");
       return;
@@ -159,7 +154,6 @@ export default function VaultDetailPage() {
 
     try {
       const userAddress = await signer.getRecommendedAddress();
-      
       const tx = await buildClaimVaultTransaction(
         signer,
         { txHash: vault.txHash, index: vault.index },
@@ -169,17 +163,26 @@ export default function VaultDetailPage() {
 
       const claimTxHash = await signAndSendTransaction(signer, tx);
 
-      // Update vault status
       const updated = { ...vault, status: "spent" as const };
       setVault(updated);
+      setCanClaim(false);
+      setOnChainData((prev) =>
+        prev
+          ? {
+              ...prev,
+              isLive: false,
+              txStatus: "committed",
+            }
+          : prev
+      );
       updateVault(updated);
 
       alert(`Claim transaction sent!\nTx Hash: ${claimTxHash}`);
     } catch (err: any) {
       console.error("Failed to claim vault:", err);
-      
+
       let errorMessage = "Failed to claim vault";
-      
+
       if (err.message?.includes("Immature")) {
         if (vault.unlock.type === "blockHeight") {
           errorMessage = `The vault is not yet unlocked. Current block: ${currentBlockHeight.toLocaleString()}, Required block: ${vault.unlock.value.toLocaleString()}. Please wait for ${(vault.unlock.value - currentBlockHeight).toLocaleString()} more blocks.`;
@@ -193,7 +196,7 @@ export default function VaultDetailPage() {
       } else if (err.message) {
         errorMessage = err.message;
       }
-      
+
       setError(errorMessage);
     } finally {
       setClaiming(false);
@@ -202,8 +205,8 @@ export default function VaultDetailPage() {
 
   const handleDelete = () => {
     if (!vault) return;
-    
-    if (confirm(`Remove this vault from your local list?\nThe on-chain cell is not affected.`)) {
+
+    if (confirm("Remove this vault from your local list?\nThe on-chain cell is not affected.")) {
       deleteVault(vault.txHash, vault.index);
       navigate("/vaults");
     }
@@ -211,16 +214,14 @@ export default function VaultDetailPage() {
 
   const formatUnlock = () => {
     if (!vault) return "";
-    if (vault.unlock.type === "blockHeight") {
-      return `Block ${vault.unlock.value.toLocaleString()}`;
-    } else {
-      return new Date(vault.unlock.value * 1000).toLocaleString();
-    }
+    return vault.unlock.type === "blockHeight"
+      ? `Block ${vault.unlock.value.toLocaleString()}`
+      : new Date(vault.unlock.value * 1000).toLocaleString();
   };
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-12">
+      <div className="max-w-5xl mx-auto px-4 md:px-6 py-8 md:py-12">
         <div className="spinner" />
       </div>
     );
@@ -228,8 +229,8 @@ export default function VaultDetailPage() {
 
   if (!vault) {
     return (
-      <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-12">
-        <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+      <div className="max-w-5xl mx-auto px-4 md:px-6 py-8 md:py-12">
+        <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6">
           <h2 className="text-2xl font-semibold mb-2">Vault Not Found</h2>
           <p className="opacity-80 mb-4">No InheritVault cell found at this transaction.</p>
           <Link to="/vaults">
@@ -243,155 +244,204 @@ export default function VaultDetailPage() {
   }
 
   const explorerUrl = `${NETWORK_CONFIGS[vault.network].explorerTxUrl}${vault.txHash}`;
+  const statusTone =
+    vault.status === "spent"
+      ? "border-red-500/40 bg-red-500/10 text-red-300"
+      : vault.status === "pending"
+        ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-200"
+        : "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
+
+  const unlockTone = isUnlocked ? "text-emerald-300" : "text-yellow-200";
+
+  let actionTitle = "Claim Status";
+  let actionBody = "Connect the beneficiary wallet to claim when the vault is unlocked.";
+
+  if (vault.status === "spent") {
+    actionTitle = "Vault Resolved";
+    actionBody = "This vault has already been claimed or otherwise spent on-chain.";
+  } else if (canClaim) {
+    actionTitle = "Ready To Claim";
+    actionBody = "The beneficiary wallet is connected, the unlock condition is satisfied, and the vault is still live on-chain.";
+  } else if (!wallet) {
+    actionTitle = "Connect Beneficiary Wallet";
+    actionBody = "Connect the beneficiary wallet address to unlock the claim action.";
+  } else if (!isUnlocked) {
+    actionTitle = "Still Locked";
+    actionBody = "The vault is verified, but the unlock condition has not been met yet.";
+  } else {
+    actionTitle = "Wrong Wallet";
+    actionBody = "The connected wallet does not match the beneficiary address recorded in this vault.";
+  }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-12 text-[#00d4aa]">
-      <div className="mb-6 md:mb-8">
+    <div className="max-w-6xl mx-auto px-4 md:px-6 py-8 md:py-12 text-[#d9fff8]">
+      <div className="mb-6">
         <Link to="/vaults" className="text-sm md:text-base text-[#00d4aa] hover:underline transition-colors">
-          ← Back to Vaults
+          {"<- Back to Vaults"}
         </Link>
       </div>
 
-      {/* On-chain verification badge */}
       {verified && (
-        <div className="flex items-center gap-2 mb-4 bg-green-900 bg-opacity-20 border border-green-700 rounded-lg px-4 py-2">
-          <span className="inline-block w-3 h-3 rounded-full bg-green-500" />
-          <span className="text-green-400 text-sm font-semibold">
-            ✓ Verified on-chain — this vault's data is read directly from the CKB blockchain
+        <div className="flex items-center gap-2 mb-6 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3 text-emerald-200">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400" />
+          <span className="text-sm font-semibold">
+            Verified on-chain - this vault&apos;s data is being read directly from the CKB blockchain.
           </span>
         </div>
       )}
 
-      <h1 className="text-2xl md:text-4xl font-bold mb-6 md:mb-8 flex flex-wrap items-center gap-4">
-        <span>Vault Detail</span>
-        {vault.status === "pending" && <span className="text-sm md:text-base text-yellow-500 whitespace-nowrap">⏳ Pending</span>}
-        {vault.status === "live" && <span className="text-sm md:text-base text-[#00d4aa] whitespace-nowrap">✓ Live</span>}
-        {vault.status === "spent" && <span className="text-sm md:text-base text-red-500 whitespace-nowrap">✗ Spent</span>}
-      </h1>
+      <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+        <section className="rounded-3xl border border-slate-700 bg-slate-800/90 p-6 md:p-8 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-sm uppercase tracking-[0.28em] text-[#7debd6] opacity-80">Vault Detail</p>
+              <h1 className="mt-2 text-3xl md:text-5xl font-semibold text-[#00f0c8]">
+                {vault.amountCKB} CKB
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm md:text-base text-slate-300">
+                A beneficiary-facing summary of who created this vault, who can claim it, and whether the funds are available right now.
+              </p>
+            </div>
+            <span className={`inline-flex items-center rounded-full border px-4 py-2 text-sm font-semibold ${statusTone}`}>
+              {vault.status === "live" ? "Live" : vault.status === "pending" ? "Pending" : "Spent"}
+            </span>
+          </div>
 
-      <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 md:p-6">
-        <h2 className="text-xl md:text-2xl font-semibold mb-4 md:mb-6">Amount</h2>
-        <div className="text-3xl md:text-4xl font-bold mb-6 md:mb-8">
-          {vault.amountCKB} CKB
-        </div>
-
-        <div className="space-y-6">
-          {/* Owner / Creator info */}
-          {(vault.ownerName || vault.ownerAddress) && (
-            <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-              <div className="text-xs md:text-sm opacity-70 mb-2">Created By</div>
-              {vault.ownerName && (
-                <div className="text-lg font-semibold mb-1">{vault.ownerName}</div>
-              )}
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            <div className="rounded-2xl border border-slate-700 bg-slate-950/50 p-4">
+              <div className="text-xs uppercase tracking-[0.22em] text-slate-400">Created By</div>
+              <div className="mt-3 text-xl font-semibold text-white">
+                {vault.ownerName || "Unknown"}
+              </div>
               {vault.ownerAddress && (
-                <div className="font-mono text-xs md:text-sm break-all opacity-80">
+                <div className="mt-2 break-all font-mono text-xs text-slate-400">
                   {vault.ownerAddress}
                 </div>
               )}
             </div>
-          )}
 
-          <div>
-            <div className="text-xs md:text-sm opacity-70 mb-2">Beneficiary Address</div>
-            <div className="font-mono text-xs md:text-sm break-all">
-              {vault.beneficiaryAddress || "(read from cell lock script)"}
+            <div className="rounded-2xl border border-slate-700 bg-slate-950/50 p-4">
+              <div className="text-xs uppercase tracking-[0.22em] text-slate-400">Beneficiary</div>
+              <div className="mt-3 break-all font-mono text-sm text-white">
+                {vault.beneficiaryAddress || "Unavailable"}
+              </div>
+              <div className="mt-2 text-xs text-slate-400">
+                Only this address should be able to submit the claim transaction.
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-700 bg-slate-950/50 p-4">
+              <div className="text-xs uppercase tracking-[0.22em] text-slate-400">Unlock Condition</div>
+              <div className="mt-3 text-base font-semibold text-white">{formatUnlock()}</div>
+              <div className={`mt-2 text-sm font-medium ${unlockTone}`}>
+                {isUnlocked ? "Unlocked and eligible for claim flow" : "Still waiting for unlock"}
+              </div>
             </div>
           </div>
 
-          <div>
-            <div className="text-xs md:text-sm opacity-70 mb-2">Unlock Condition</div>
-            <div className="flex flex-wrap items-center gap-2 md:gap-4">
-              <span>{formatUnlock()}</span>
-              {isUnlocked ? (
-                <span className="text-[#00d4aa] text-sm md:text-base">✓ Unlocked</span>
-              ) : (
-                <span className="text-gray-500 text-sm md:text-base">🔒 Locked</span>
+          {(vault.memo || vault.txHash) && (
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                <div className="text-xs uppercase tracking-[0.22em] text-slate-400">Memo</div>
+                <div className="mt-3 text-sm md:text-base text-slate-200">
+                  {vault.memo || "No memo was attached to this vault."}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                <div className="text-xs uppercase tracking-[0.22em] text-slate-400">Transaction Hash</div>
+                <a
+                  href={explorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 block break-all font-mono text-xs text-[#7debd6] hover:underline"
+                >
+                  {vault.txHash}
+                </a>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <aside className="rounded-3xl border border-slate-700 bg-slate-900/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+          <div className="rounded-2xl border border-slate-700 bg-slate-950/40 p-5">
+            <div className="text-xs uppercase tracking-[0.22em] text-slate-400">Claim Panel</div>
+            <h2 className="mt-3 text-2xl font-semibold text-white">{actionTitle}</h2>
+            <p className="mt-3 text-sm leading-6 text-slate-300">{actionBody}</p>
+
+            <div className="mt-6 flex flex-col gap-3">
+              {canClaim && vault.status === "live" && (
+                <button
+                  className="flex items-center justify-center gap-2 rounded-xl bg-[#00d4aa] px-5 py-3 font-semibold text-black transition-colors hover:bg-[#22e4bd] disabled:cursor-not-allowed disabled:opacity-70"
+                  onClick={handleClaim}
+                  disabled={claiming}
+                >
+                  {claiming && <span className="spinner-inline" aria-hidden="true" />}
+                  <span>{claiming ? "Submitting Claim..." : "Claim Vault"}</span>
+                </button>
               )}
+
+              {!canClaim && vault.status === "live" && (
+                <button
+                  className="rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-medium text-slate-300 opacity-80"
+                  disabled
+                >
+                  {!wallet
+                    ? "Connect Wallet to Claim"
+                    : !isUnlocked
+                      ? "Not Yet Unlocked"
+                      : "Not Beneficiary"}
+                </button>
+              )}
+
+              {vault.status === "spent" && (
+                <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-5 py-3 text-sm font-medium text-red-200">
+                  This vault has been claimed or spent.
+                </div>
+              )}
+
+              <button
+                className="rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-800"
+                onClick={handleDelete}
+              >
+                Delete Record
+              </button>
             </div>
           </div>
 
-          {vault.memo && (
-            <div>
-              <div className="text-xs md:text-sm opacity-70 mb-2">Memo</div>
-              <div>{vault.memo}</div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+            <div className="rounded-2xl border border-slate-700 bg-slate-950/30 p-4">
+              <div className="text-xs uppercase tracking-[0.22em] text-slate-400">Network</div>
+              <div className="mt-2 text-base font-semibold text-white capitalize">{vault.network}</div>
             </div>
-          )}
 
-          <div>
-            <div className="text-xs md:text-sm opacity-70 mb-2">Transaction Hash</div>
-            <div className="font-mono text-xs md:text-sm break-all">
-              <a href={explorerUrl} target="_blank" rel="noopener noreferrer" className="text-[#00d4aa] hover:underline">
-                {vault.txHash}
-              </a>
+            <div className="rounded-2xl border border-slate-700 bg-slate-950/30 p-4">
+              <div className="text-xs uppercase tracking-[0.22em] text-slate-400">Created</div>
+              <div className="mt-2 text-base font-semibold text-white">
+                {new Date(vault.createdAt).toLocaleString()}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-700 bg-slate-950/30 p-4">
+              <div className="text-xs uppercase tracking-[0.22em] text-slate-400">Current Block</div>
+              <div className="mt-2 text-base font-semibold text-white">
+                {currentBlockHeight.toLocaleString()}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-700 bg-slate-950/30 p-4">
+              <div className="text-xs uppercase tracking-[0.22em] text-slate-400">Current Time</div>
+              <div className="mt-2 text-base font-semibold text-white">
+                {new Date(currentTimestamp * 1000).toLocaleString()}
+              </div>
             </div>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <div className="text-xs md:text-sm opacity-70 mb-2">Network</div>
-              <div className="capitalize">{vault.network}</div>
-            </div>
-            <div>
-              <div className="text-xs md:text-sm opacity-70 mb-2">Created</div>
-              <div>{new Date(vault.createdAt).toLocaleString()}</div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <div className="text-xs md:text-sm opacity-70 mb-2">Current Block</div>
-              <div>{currentBlockHeight.toLocaleString()}</div>
-            </div>
-            <div>
-              <div className="text-xs md:text-sm opacity-70 mb-2">Current Time</div>
-              <div>{new Date(currentTimestamp * 1000).toLocaleString()}</div>
-            </div>
-          </div>
-        </div>
+        </aside>
       </div>
 
       {error && (
-        <div className="bg-red-500 bg-opacity-10 border border-white rounded-lg p-4 mt-4">
-          <div className="text-white text-sm md:text-base break-words">{error}</div>
-        </div>
-      )}
-
-      <div className="flex flex-col sm:flex-row gap-4 mt-6 md:mt-8">
-        {canClaim && (
-          <button 
-            className="flex-1 bg-gray-800 hover:bg-gray-500 text-[#00d4aa] font-bold px-6 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={handleClaim} 
-            disabled={claiming}
-          >
-            {claiming ? "Claiming..." : "Claim Vault"}
-          </button>
-        )}
-        {!canClaim && vault.status === "live" && (
-          <button className="flex-1 bg-gray-800 text-gray-200 px-6 py-3 rounded-lg border border-gray-700 cursor-not-allowed opacity-70" disabled>
-            {!wallet
-              ? "Connect Wallet to Claim"
-              : !isUnlocked
-              ? "🔒 Not Yet Unlocked"
-              : "Not Beneficiary"}
-          </button>
-        )}
-        {vault.status === "spent" && (
-          <div className="flex-1 px-6 py-3 text-red-500 text-center">
-            This vault has been claimed or spent
-          </div>
-        )}
-        <button 
-          className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-200 px-6 py-3 rounded-lg border border-gray-700 transition-colors"
-          onClick={handleDelete}
-        >
-          Delete Record
-        </button>
-      </div>
-
-      {canClaim && (
-        <div className="bg-opacity-10 border border-green-500 rounded-lg p-4 md:p-6 mt-4">
-          <h3 className="text-lg md:text-xl font-semibold text-[#00d4aa] mb-2">✓ Ready to Claim</h3>
-          <p className="text-sm md:text-base">You are the beneficiary and the unlock condition has been met. Click "Claim Vault" to transfer the funds to your address.</p>
+        <div className="mt-6 rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-100">
+          {error}
         </div>
       )}
     </div>

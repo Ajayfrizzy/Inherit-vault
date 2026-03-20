@@ -1,18 +1,10 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// InheritVault – Email Notification Service (Resend via Vercel Serverless)
+// -----------------------------------------------------------------------------
+// InheritVault - Email Notification Service (Resend via Vercel Serverless)
 //
 // Sends email notifications to beneficiaries via a Vercel serverless function
-// that calls the Resend API. The API key is kept server-side — the frontend
+// that calls the Resend API. The API key is kept server-side; the frontend
 // only sends a POST request with the email payload.
-//
-// Setup:
-//   1. Create a free Resend account at https://resend.com (3,000 emails/month)
-//   2. Get your API key from the Resend dashboard
-//   3. Set env vars in the Vercel dashboard:
-//        RESEND_API_KEY   – your Resend API key
-//        RESEND_FROM      – sender address (e.g. "InheritVault <noreply@yourdomain.com>")
-//   4. Optionally set VITE_EMAIL_API_URL in .env for local dev
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 import {
   NETWORK_CONFIGS,
@@ -20,8 +12,6 @@ import {
   type Network,
 } from "../config";
 import type { UnlockCondition } from "../types";
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatUnlock(unlock: UnlockCondition): string {
   if (unlock.type === "blockHeight") {
@@ -40,37 +30,56 @@ function explorerUrl(network: Network, txHash: string): string {
   return `${NETWORK_CONFIGS[network].explorerTxUrl}${txHash}`;
 }
 
-// ── API caller ──────────────────────────────────────────────────────────────
+function isRelativeEmailApiUrl(): boolean {
+  return EMAIL_API_URL.startsWith("/");
+}
+
+function localDevEmailHelp(): string {
+  return (
+    "Email notifications need a reachable backend. In local dev, run a Vercel " +
+    "server for /api/send-email or set VITE_EMAIL_API_URL to a deployed endpoint."
+  );
+}
 
 async function callEmailApi(body: Record<string, unknown>): Promise<boolean> {
   if (!EMAIL_API_URL) {
     console.warn(
-      "[InheritVault] Email API URL not configured – skipping notification. " +
+      "[InheritVault] Email API URL not configured - skipping notification. " +
         "Set VITE_EMAIL_API_URL in .env or deploy to Vercel (uses /api/send-email by default)."
     );
     return false;
   }
 
-  const res = await fetch(EMAIL_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  try {
+    const res = await fetch(EMAIL_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    console.error("[InheritVault] Email API error:", err);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error("[InheritVault] Email API error:", err);
+
+      if (import.meta.env.DEV && isRelativeEmailApiUrl()) {
+        console.error(`[InheritVault] ${localDevEmailHelp()}`);
+      }
+
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error("[InheritVault] Failed to reach email API:", err);
+
+    if (import.meta.env.DEV && isRelativeEmailApiUrl()) {
+      console.error(`[InheritVault] ${localDevEmailHelp()}`);
+    }
+
     return false;
   }
-
-  return true;
 }
 
-// ── Email senders ───────────────────────────────────────────────────────────
-
-/**
- * Send a "Vault Created" notification to the beneficiary.
- */
 export async function sendVaultCreatedEmail(params: {
   toEmail: string;
   ownerName?: string;
@@ -88,10 +97,10 @@ export async function sendVaultCreatedEmail(params: {
       ownerName: params.ownerName || "Someone",
       amountCKB: params.amountCKB,
       unlockCondition: formatUnlock(params.unlock),
-      memo: params.memo || "—",
+      memo: params.memo || "-",
       vaultUrl: vaultUrl(params.network, params.txHash, params.index),
       explorerUrl: explorerUrl(params.network, params.txHash),
-      txHash: `${params.txHash.slice(0, 10)}…${params.txHash.slice(-8)}`,
+      txHash: `${params.txHash.slice(0, 10)}...${params.txHash.slice(-8)}`,
     });
     if (sent) console.log("[InheritVault] Vault Created email sent to", params.toEmail);
     return sent;
@@ -101,9 +110,6 @@ export async function sendVaultCreatedEmail(params: {
   }
 }
 
-/**
- * Send a "Vault Claimable" notification to the beneficiary.
- */
 export async function sendVaultClaimableEmail(params: {
   toEmail: string;
   ownerName?: string;
@@ -131,9 +137,18 @@ export async function sendVaultClaimableEmail(params: {
   }
 }
 
-/**
- * Returns true if email notifications are configured (API URL is set).
- */
 export function isEmailConfigured(): boolean {
   return !!EMAIL_API_URL;
+}
+
+export function getEmailConfigurationMessage(): string {
+  if (!EMAIL_API_URL) {
+    return "Email notifications are not configured. Set VITE_EMAIL_API_URL or deploy to Vercel so /api/send-email is available.";
+  }
+
+  if (import.meta.env.DEV && isRelativeEmailApiUrl()) {
+    return "Local dev needs a backend for /api/send-email. Run Vercel dev on port 3000 or set VITE_EMAIL_API_URL to a deployed endpoint.";
+  }
+
+  return "The beneficiary will receive email notifications when the vault is created and when funds become claimable. Email is stored locally only - never on-chain.";
 }

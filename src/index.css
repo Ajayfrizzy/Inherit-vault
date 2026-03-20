@@ -13,4 +13,8 @@
     @apply border-4 border-gray-700 rounded-full w-6 h-6 animate-spin mx-auto;
     border-top-color: #00d4aa;
   }
+
+  .spinner-inline {
+    @apply inline-block border-2 border-current border-r-transparent rounded-full w-4 h-4 animate-spin;
+  }
 }

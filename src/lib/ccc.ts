@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { ccc } from "@ckb-ccc/connector-react";
+import type { Network } from "../config";
 import type { UnlockCondition } from "../types";
 import { encodeVaultCellData } from "./codec";
 import type { IndexerScript } from "./vaultIndexer";
@@ -79,6 +80,33 @@ export async function getLockScriptForIndexer(
     hash_type: script.hashType,
     args: script.args,
   };
+}
+
+export async function getAddressFromIndexerLock(
+  lockScript: IndexerScript,
+  network: Network
+): Promise<string> {
+  const { ccc } = await import("@ckb-ccc/connector-react");
+  const client = network === "testnet"
+    ? new ccc.ClientPublicTestnet()
+    : new ccc.ClientPublicMainnet();
+
+  return ccc.Address.fromScript(
+    {
+      codeHash: lockScript.code_hash,
+      hashType: lockScript.hash_type,
+      args: lockScript.args,
+    },
+    client
+  ).toString();
+}
+
+function buildAbsoluteSince(cccApi: any, unlock: UnlockCondition) {
+  return cccApi.Since.from({
+    relative: "absolute",
+    metric: unlock.type === "blockHeight" ? "blockNumber" : "timestamp",
+    value: BigInt(unlock.value),
+  });
 }
 
 // ============================================================================
@@ -180,29 +208,7 @@ export async function buildClaimVaultTransaction(
     
     // Get recipient lock script
     const recipientLock = await getLockScriptFromAddress(recipientAddress, signer);
-    
-    // Encode the since field based on unlock type
-    // Note: CKB's since validation uses ">" (strictly greater than), not ">=".
-    // To allow claiming at the exact unlock time/block, we subtract 1 from the value.
-    let sinceValue: bigint;
-    if (unlock.type === "blockHeight") {
-      // Absolute block-number lock
-      // Format: 0x0000000000000000 | blockHeight
-      // The high bit must be 0 for absolute, bit 62 set for block-number metric
-      // Subtract 1 so that claiming is possible at exactly the unlock block
-      const adjustedValue = Math.max(0, unlock.value - 1);
-      sinceValue = BigInt(adjustedValue);
-    } else {
-      // Absolute timestamp lock
-      // Format: 0x4000000000000000 | timestamp_in_seconds
-      // Bit 63 = 0 (absolute)
-      // Bits 62-61 = 10 (timestamp metric)
-      // This sets bit 62 only, which is 0x4000000000000000
-      // Subtract 1 second so that claiming is possible at exactly the unlock time
-      const TIMESTAMP_FLAG = BigInt("0x4000000000000000");
-      const adjustedValue = Math.max(0, unlock.value - 1);
-      sinceValue = TIMESTAMP_FLAG | BigInt(adjustedValue);
-    }
+    const since = buildAbsoluteSince(ccc, unlock);
     
     // Create cell dependency for the vault cell
     const vaultCell = await signer.client.getCell({
@@ -222,7 +228,7 @@ export async function buildClaimVaultTransaction(
             txHash: vaultOutPoint.txHash,
             index: vaultOutPoint.index,
           },
-          since: sinceValue,
+          since,
         },
       ],
       outputs: [
