@@ -5,15 +5,22 @@
 // This replaces localStorage as the source of truth for vault data.
 // -----------------------------------------------------------------------------
 
-import { getIndexerUrls, type Network } from "../config";
+import { getIndexerUrls, type Network, VAULT_TYPE_SCRIPT } from "../config";
 import { getAddressFromIndexerLock } from "./ccc";
 import { getCellByOutPoint, getTransactionStatus } from "./ckb";
 import {
   decodeVaultCellData,
-  isVaultCell,
-  VAULT_DATA_PREFIX,
   type VaultCellPayload,
 } from "./codec";
+
+// Helper to check if a cell is an authentic vault cell by verifying its Type Script
+function isVaultCell(typeScript: any | null | undefined): boolean {
+  if (!typeScript) return false;
+  return (
+    typeScript.code_hash === VAULT_TYPE_SCRIPT.codeHash &&
+    typeScript.hash_type === VAULT_TYPE_SCRIPT.hashType
+  );
+}
 
 /** Lock script in CKB-RPC snake_case format (for indexer queries). */
 export interface IndexerScript {
@@ -79,22 +86,25 @@ async function fetchVaultsForLockScriptFromIndexer(
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    // Instead of querying by a specific lock script and filtering raw output_data,
+    // we query directly by the Vault's custom Type Script hash.
+    // We then apply a script filter to only pull Vaults destined for our specific lock.
     const searchKey: Record<string, unknown> = {
       script: {
-        code_hash: lockScript.code_hash,
-        hash_type: lockScript.hash_type,
-        args: lockScript.args,
+        code_hash: VAULT_TYPE_SCRIPT.codeHash,
+        hash_type: VAULT_TYPE_SCRIPT.hashType,
+        args: "0x",
       },
-      script_type: "lock",
+      script_type: "type",
       with_data: true,
+      filter: {
+        script: {
+          code_hash: lockScript.code_hash,
+          hash_type: lockScript.hash_type,
+          args: lockScript.args,
+        }
+      }
     };
-
-    if (usePrefixFilter) {
-      searchKey.filter = {
-        output_data: VAULT_DATA_PREFIX,
-        output_data_filter_mode: "prefix",
-      };
-    }
 
     const params: unknown[] = [searchKey, "desc", "0x64"];
     if (cursor) params.push(cursor);
@@ -117,12 +127,8 @@ async function fetchVaultsForLockScriptFromIndexer(
 
     const objects: any[] = json.result?.objects ?? [];
 
-    if (usePrefixFilter && objects.some((cell) => !isVaultCell(cell.output_data))) {
-      throw new Error("INDEXER_PREFIX_FILTER_UNSUPPORTED");
-    }
-
     for (const cell of objects) {
-      if (!usePrefixFilter && !isVaultCell(cell.output_data)) continue;
+      if (!isVaultCell(cell.output.type)) continue;
       const parsed = parseVaultCell(cell);
       if (parsed) vaults.push(parsed);
     }
@@ -213,7 +219,7 @@ export async function fetchVaultFromTransaction(
   const output = txResult.transaction.outputs[index];
   const outputData = txResult.transaction.outputs_data[index];
   if (!output || !outputData) return null;
-  if (!isVaultCell(outputData)) return null;
+  if (!isVaultCell(output.type)) return null;
 
   const decoded = decodeVaultCellData(outputData);
   if (!decoded) return null;

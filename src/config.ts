@@ -43,18 +43,18 @@ export function getIndexerUrls(network: Network): string[] {
   return Array.from(new Set([indexerUrl, ...indexerUrls]));
 }
 
-// Minimum CKB capacity for a vault cell.
-// Cell overhead ~= 61 bytes (8 capacity + 53 lock script).
-// Vault data ~= 80-200 bytes (magic + version + JSON payload).
-// Total ~= 141-261 bytes -> 141-261 CKB minimum.
-// We set 250 CKB as the safe floor; the UI calculates the exact minimum
-// dynamically based on the data payload size.
 export const MIN_VAULT_CKB = 250;
 
-// -----------------------------------------------------------------------------
-// Email notifications (Resend via Vercel serverless function)
-// In production on Vercel this defaults to "/api/send-email".
-// For local dev, set VITE_EMAIL_API_URL in .env.
-// -----------------------------------------------------------------------------
 export const EMAIL_API_URL =
   import.meta.env.VITE_EMAIL_API_URL ?? "/api/send-email";
+
+// Deployment hashes for our custom Rust CKB scripts
+export const VAULT_LOCK_SCRIPT = {
+  codeHash: "0x0000000000000000000000000000000000000000000000000000000000000000",
+  hashType: "type" as const,
+};
+
+export const VAULT_TYPE_SCRIPT = {
+  codeHash: "0x0000000000000000000000000000000000000000000000000000000000000000",
+  hashType: "type" as const,
+};

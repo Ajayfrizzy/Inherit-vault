@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { ccc } from "@ckb-ccc/connector-react";
-import type { Network } from "../config";
+import { getIndexerUrls, type Network, VAULT_LOCK_SCRIPT, VAULT_TYPE_SCRIPT } from "../config";
 import type { UnlockCondition } from "../types";
 import { encodeVaultCellData } from "./codec";
 import type { IndexerScript } from "./vaultIndexer";

@@ -1,0 +1,14 @@
+version = "0.10.5"
+
+[project]
+name = "inherit-vault"
+
+[[contracts]]
+name = "inherit-vault-lock"
+template_type = "Rust"
+rust_target = "riscv64imac-unknown-none-elf"
+
+[[contracts]]
+name = "inherit-vault-type"
+template_type = "Rust"
+rust_target = "riscv64imac-unknown-none-elf"

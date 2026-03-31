@@ -1,0 +1,12 @@
+[package]
+name = "tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ckb-testtool = "1.1.1"
+ckb-types = "0.111.0"
+ckb-error = "0.111.0"
+
+[dev-dependencies]
+molecule = "0.8.0"

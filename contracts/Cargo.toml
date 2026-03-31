@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "inherit-vault-lock",
+    "inherit-vault-type",
+    "tests",
+]
+resolver = "2"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+opt-level = "z"
+strip = true

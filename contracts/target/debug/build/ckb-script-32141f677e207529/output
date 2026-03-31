@@ -1,0 +1,2 @@
+cargo:rustc-cfg=has_asm
+cargo:rerun-if-changed=src

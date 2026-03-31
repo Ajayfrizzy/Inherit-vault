@@ -1,0 +1,236 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/c/Users/ajayh/Desktop/ckb_builder_track/mvp/contracts/inherit-vault-lock/Cargo.toml
+workspace: /mnt/c/Users/ajayh/Desktop/ckb_builder_track/mvp/contracts/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/c/Users/ajayh/Desktop/ckb_builder_track/mvp/contracts/inherit-vault-type/Cargo.toml
+workspace: /mnt/c/Users/ajayh/Desktop/ckb_builder_track/mvp/contracts/Cargo.toml
+   Compiling numext-fixed-uint v0.1.6
+   Compiling ckb-system-scripts v0.5.4
+   Compiling ckb-gen-types v1.1.0
+   Compiling ckb-rational v1.1.0
+   Compiling cacache v13.1.0
+   Compiling ckb-std v0.16.4
+   Compiling ckb-gen-types v0.111.0
+   Compiling ckb-rational v0.111.0
+   Compiling inherit-vault-lock v0.1.0 (/mnt/c/Users/ajayh/Desktop/ckb_builder_track/mvp/contracts/inherit-vault-lock)
+   Compiling inherit-vault-type v0.1.0 (/mnt/c/Users/ajayh/Desktop/ckb_builder_track/mvp/contracts/inherit-vault-type)
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `alloc`
+  --> inherit-vault-type/src/main.rs:34:13
+   |
+34 |             debug!("Output {}: Cell data too short", i);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `alloc`
+   |
+   = note: this error originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `alloc`
+  --> inherit-vault-lock/src/main.rs:43:13
+   |
+43 |             debug!("Vault cell data too short to be valid Molecule table");
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `alloc`
+   |
+   = note: this error originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `alloc`
+  --> inherit-vault-lock/src/main.rs:70:13
+   |
+70 |             debug!("Error: Transaction since field must be absolute.");
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `alloc`
+   |
+   = note: this error originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `alloc`
+  --> inherit-vault-type/src/main.rs:41:13
+   |
+41 | /             debug!(
+42 | |                 "Output {}: Total size mismatch. Expected {}, found {}",
+43 | |                 i,
+44 | |                 data.len(),
+45 | |                 total_size
+46 | |             );
+   | |_____________^ use of unresolved module or unlinked crate `alloc`
+   |
+   = note: this error originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `alloc`
+  --> inherit-vault-lock/src/main.rs:75:13
+   |
+75 |             debug!("Error: Mismatch between cell timelock metric and transaction since metric.");
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `alloc`
+   |
+   = note: this error originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `alloc`
+  --> inherit-vault-type/src/main.rs:81:13
+   |
+81 |             debug!("Output {}: Invalid unlock_type length {}", i, unlock_type_len);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `alloc`
+   |
+   = note: this error originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `alloc`
+  --> inherit-vault-lock/src/main.rs:82:13
+   |
+82 | /             debug!(
+83 | |                 "Timelock enforced: Transaction since {} < Vault unlock value {}",
+84 | |                 since_value,
+85 | |                 unlock_value
+86 | |             );
+   | |_____________^ use of unresolved module or unlinked crate `alloc`
+   |
+   = note: this error originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `alloc`
+  --> inherit-vault-type/src/main.rs:88:13
+   |
+88 |             debug!("Output {}: Invalid unlock_value length {}", i, unlock_value_len);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `alloc`
+   |
+   = note: this error originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `native-simulator`
+  --> inherit-vault-type/src/main.rs:34:13
+   |
+34 |             debug!("Output {}: Cell data too short", i);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: no expected values for `feature`
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `debug` crate for guidance on how handle this unexpected cfg
+   = help: the macro `debug` may come from an old version of the `ckb_std` crate, try updating your dependency with `cargo update -p ckb_std`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+   = note: this warning originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `native-simulator`
+  --> inherit-vault-type/src/main.rs:34:13
+   |
+34 |             debug!("Output {}: Cell data too short", i);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: no expected values for `feature`
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `debug` crate for guidance on how handle this unexpected cfg
+   = help: the macro `debug` may come from an old version of the `ckb_std` crate, try updating your dependency with `cargo update -p ckb_std`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `native-simulator`
+  --> inherit-vault-type/src/main.rs:41:13
+   |
+41 | /             debug!(
+42 | |                 "Output {}: Total size mismatch. Expected {}, found {}",
+43 | |                 i,
+44 | |                 data.len(),
+45 | |                 total_size
+46 | |             );
+   | |_____________^
+   |
+   = note: no expected values for `feature`
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `debug` crate for guidance on how handle this unexpected cfg
+   = help: the macro `debug` may come from an old version of the `ckb_std` crate, try updating your dependency with `cargo update -p ckb_std`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `native-simulator`
+  --> inherit-vault-lock/src/main.rs:43:13
+   |
+43 |             debug!("Vault cell data too short to be valid Molecule table");
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: no expected values for `feature`
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `debug` crate for guidance on how handle this unexpected cfg
+   = help: the macro `debug` may come from an old version of the `ckb_std` crate, try updating your dependency with `cargo update -p ckb_std`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+   = note: this warning originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `native-simulator`
+  --> inherit-vault-lock/src/main.rs:43:13
+   |
+43 |             debug!("Vault cell data too short to be valid Molecule table");
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: no expected values for `feature`
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `debug` crate for guidance on how handle this unexpected cfg
+   = help: the macro `debug` may come from an old version of the `ckb_std` crate, try updating your dependency with `cargo update -p ckb_std`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `native-simulator`
+  --> inherit-vault-type/src/main.rs:81:13
+   |
+81 |             debug!("Output {}: Invalid unlock_type length {}", i, unlock_type_len);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: no expected values for `feature`
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `debug` crate for guidance on how handle this unexpected cfg
+   = help: the macro `debug` may come from an old version of the `ckb_std` crate, try updating your dependency with `cargo update -p ckb_std`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `native-simulator`
+  --> inherit-vault-lock/src/main.rs:70:13
+   |
+70 |             debug!("Error: Transaction since field must be absolute.");
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: no expected values for `feature`
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `debug` crate for guidance on how handle this unexpected cfg
+   = help: the macro `debug` may come from an old version of the `ckb_std` crate, try updating your dependency with `cargo update -p ckb_std`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `native-simulator`
+  --> inherit-vault-type/src/main.rs:88:13
+   |
+88 |             debug!("Output {}: Invalid unlock_value length {}", i, unlock_value_len);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: no expected values for `feature`
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `debug` crate for guidance on how handle this unexpected cfg
+   = help: the macro `debug` may come from an old version of the `ckb_std` crate, try updating your dependency with `cargo update -p ckb_std`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `native-simulator`
+  --> inherit-vault-lock/src/main.rs:75:13
+   |
+75 |             debug!("Error: Mismatch between cell timelock metric and transaction since metric.");
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: no expected values for `feature`
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `debug` crate for guidance on how handle this unexpected cfg
+   = help: the macro `debug` may come from an old version of the `ckb_std` crate, try updating your dependency with `cargo update -p ckb_std`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unexpected `cfg` condition value: `native-simulator`
+  --> inherit-vault-lock/src/main.rs:82:13
+   |
+82 | /             debug!(
+83 | |                 "Timelock enforced: Transaction since {} < Vault unlock value {}",
+84 | |                 since_value,
+85 | |                 unlock_value
+86 | |             );
+   | |_____________^
+   |
+   = note: no expected values for `feature`
+   = note: using a cfg inside a macro will use the cfgs from the destination crate and not the ones from the defining crate
+   = help: try referring to `debug` crate for guidance on how handle this unexpected cfg
+   = help: the macro `debug` may come from an old version of the `ckb_std` crate, try updating your dependency with `cargo update -p ckb_std`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: this warning originates in the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0433`.
+warning: `inherit-vault-type` (bin "inherit-vault-type" test) generated 8 warnings (3 duplicates)
+error: could not compile `inherit-vault-type` (bin "inherit-vault-type" test) due to 4 previous errors; 8 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `inherit-vault-lock` (bin "inherit-vault-lock" test) generated 8 warnings (3 duplicates)
+error: could not compile `inherit-vault-lock` (bin "inherit-vault-lock" test) due to 4 previous errors; 8 warnings emitted

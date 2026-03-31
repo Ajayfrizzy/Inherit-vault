@@ -1,0 +1,4 @@
+cargo:rerun-if-changed=specs/cells/secp256k1_blake160_sighash_all
+cargo:rerun-if-changed=specs/cells/secp256k1_data
+cargo:rerun-if-changed=specs/cells/dao
+cargo:rerun-if-changed=specs/cells/secp256k1_blake160_multisig_all

@@ -1,0 +1,10 @@
+array Uint64 [byte; 8];
+vector Bytes <byte>;
+
+table VaultCellData {
+    owner_address: Bytes,
+    owner_name: Bytes,
+    unlock_type: byte,
+    unlock_value: Uint64,
+    memo: Bytes,
+}

@@ -6,10 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "@ckb-ccc/connector-react": "^1.0.31",
+    "@ckb-cobuild/molecule": "^1.1.0",
+    "@ckb-lumos/codec": "^0.23.0",
     "@tailwindcss/postcss": "^4.2.0",
     "lucide": "^0.575.0",
     "react": "^18.3.1",
@@ -18,14 +21,17 @@
     "resend": "^6.9.2"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vercel/node": "^5.6.9",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.24",
+    "jsdom": "^29.0.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.2.0",
     "typescript": "^5.7.2",
-    "vite": "^6.0.5"
+    "vite": "^6.0.5",
+    "vitest": "^4.1.2"
   }
 }

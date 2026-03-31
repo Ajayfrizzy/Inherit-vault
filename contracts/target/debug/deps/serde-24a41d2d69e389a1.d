@@ -1,0 +1,14 @@
+/mnt/c/Users/ajayh/Desktop/ckb_builder_track/mvp/contracts/target/debug/deps/serde-24a41d2d69e389a1.d: /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /mnt/c/Users/ajayh/Desktop/ckb_builder_track/mvp/contracts/target/debug/build/serde-5939fbf4378ae788/out/private.rs
+
+/mnt/c/Users/ajayh/Desktop/ckb_builder_track/mvp/contracts/target/debug/deps/libserde-24a41d2d69e389a1.rlib: /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /mnt/c/Users/ajayh/Desktop/ckb_builder_track/mvp/contracts/target/debug/build/serde-5939fbf4378ae788/out/private.rs
+
+/mnt/c/Users/ajayh/Desktop/ckb_builder_track/mvp/contracts/target/debug/deps/libserde-24a41d2d69e389a1.rmeta: /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /mnt/c/Users/ajayh/Desktop/ckb_builder_track/mvp/contracts/target/debug/build/serde-5939fbf4378ae788/out/private.rs
+
+/home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/home/ajayfrizzy/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/mnt/c/Users/ajayh/Desktop/ckb_builder_track/mvp/contracts/target/debug/build/serde-5939fbf4378ae788/out/private.rs:
+
+# env-dep:OUT_DIR=/mnt/c/Users/ajayh/Desktop/ckb_builder_track/mvp/contracts/target/debug/build/serde-5939fbf4378ae788/out
