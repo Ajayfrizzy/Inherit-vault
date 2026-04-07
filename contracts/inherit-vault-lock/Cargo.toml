@@ -3,11 +3,17 @@ name = "inherit-vault-lock"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "inherit-vault-lock"
+path = "src/main.rs"
+
 [dependencies]
-ckb-std = "0.16.1"
+ckb-std = { version = "0.16.1", features = ["dummy-atomic"] }
+vault-common = { path = "../vault-common" }
 
 [profile.release]
-strip = true
 opt-level = "z"
 lto = true
+codegen-units = 1
 panic = "abort"
+strip = true

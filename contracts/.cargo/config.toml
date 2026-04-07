@@ -1,4 +1,6 @@
+[env]
+CC_riscv64imac_unknown_none_elf = "clang"
+CFLAGS_riscv64imac_unknown_none_elf = "--target=riscv64-unknown-elf"
+
 [target.riscv64imac-unknown-none-elf]
-rustflags = [
-    "-C", "link-arg=-s",
-]
+rustflags = ["-C", "link-arg=-s", "-C", "target-feature=-a"]

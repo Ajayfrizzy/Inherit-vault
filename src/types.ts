@@ -1,6 +1,6 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// InheritVault – Shared Types
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// InheritVault - Shared Types
+// -----------------------------------------------------------------------------
 
 import type { Network } from "./config";
 
@@ -13,24 +13,25 @@ export interface UnlockCondition {
   type: UnlockType;
   /**
    * When type === "blockHeight": an absolute CKB block height (number).
-   * When type === "timestamp":  a Unix timestamp in **seconds**.
+   * When type === "timestamp": a Unix timestamp in seconds.
    */
   value: number;
 }
+
+export type VaultFormat = "legacy" | "scripted";
+export type VaultAuthenticity = "legacy" | "verified";
 
 // ---------------------------------------------------------------------------
 // CKB OutPoint (pointer to a specific cell)
 // ---------------------------------------------------------------------------
 export interface OutPoint {
-  txHash: string; // 0x-prefixed 32-byte hex
-  index: number;  // cell index within the transaction outputs (decimal)
+  txHash: string;
+  index: number;
 }
 
 // ---------------------------------------------------------------------------
-// Vault record – lightweight reference stored in localStorage.
+// Vault record - lightweight reference stored in localStorage.
 // The real vault data lives on-chain in the cell's output_data.
-// This record is an *index* the owner keeps so they can quickly find their
-// created vaults without scanning the entire chain.
 // ---------------------------------------------------------------------------
 export interface VaultRecord {
   /** Transaction hash of the create-vault transaction. */
@@ -45,8 +46,6 @@ export interface VaultRecord {
   /** ISO-8601 timestamp of when the vault was created locally. */
   createdAt: string;
 
-  // ── Cached on-chain data (for display while tx is pending / offline) ──
-
   /** CKB address of the beneficiary. */
   beneficiaryAddress: string;
 
@@ -59,13 +58,11 @@ export interface VaultRecord {
   /** Optional memo stored in cell data on-chain. */
   memo?: string;
 
-  /** Beneficiary email for notifications (stored locally, NOT on-chain). */
+  /** Beneficiary email for notifications (stored locally, not on-chain). */
   beneficiaryEmail?: string;
 
   /** Whether a "vault claimable" email has been sent (prevents duplicates). */
   claimableEmailSent?: boolean;
-
-  // ── Owner profile (stored in cell data on-chain) ──
 
   /** Owner's CKB address (the wallet that funded the vault). */
   ownerAddress?: string;
@@ -73,13 +70,17 @@ export interface VaultRecord {
   /** Owner's chosen display name. */
   ownerName?: string;
 
-  // ── Status cache ──
+  /** Whether the vault uses the new scripted format or the old compatibility flow. */
+  format?: VaultFormat;
+
+  /** Whether the vault is an authenticated typed/scripted vault or a legacy compatibility record. */
+  authenticity?: VaultAuthenticity;
 
   /**
    * Cached status (refreshed when the vault detail page is viewed).
-   * "pending"   – tx not yet confirmed
-   * "live"      – cell is unspent
-   * "spent"     – cell has been spent (claimed or otherwise)
+   * "pending" - tx not yet confirmed
+   * "live" - cell is unspent
+   * "spent" - cell has been spent (claimed or otherwise)
    */
   status?: "pending" | "live" | "spent";
 }
@@ -95,7 +96,7 @@ export interface CkbScript {
 }
 
 export interface CkbCellOutput {
-  capacity: string; // hex-encoded
+  capacity: string;
   lock: CkbScript;
   type?: CkbScript | null;
 }
@@ -105,10 +106,10 @@ export interface CkbCell {
   output_data: string;
   out_point: {
     tx_hash: string;
-    index: string; // hex
+    index: string;
   };
-  block_number?: string; // hex
-  tx_index?: string;     // hex
+  block_number?: string;
+  tx_index?: string;
 }
 
 export interface CkbTransactionStatus {
@@ -126,6 +127,6 @@ export interface CkbTransactionStatus {
 }
 
 export interface TipHeader {
-  blockNumber: number;   // decimal
-  timestamp: number;     // Unix seconds
+  blockNumber: number;
+  timestamp: number;
 }

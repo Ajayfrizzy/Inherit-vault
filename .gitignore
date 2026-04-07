@@ -1,2 +1,13 @@
 /node_modules
 /dist
+contracts/target/
+
+# Contract build / deployment artifacts
+contracts/build/
+contracts/migrations/
+contracts/tx.json
+contracts/test-output.txt
+
+# Local deployment config files
+contracts/deploy.toml
+contracts/deploy.toml.save

@@ -12,73 +12,65 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <div className="flex flex-col min-h-screen">
-      <header className="border-b border-gray-700 px-4 md:px-8 py-4">
-        {/* Desktop and Mobile Header Bar */}
-        <div className="flex justify-between items-center">
-          {/* Logo */}
-          <Link to="/" className="text-xl md:text-2xl font-bold text-[#00d4aa]">
-            🔐 InheritVault
+    <div className="flex min-h-screen flex-col">
+      <header className="border-b border-gray-700 px-4 py-4 md:px-8">
+        <div className="flex items-center justify-between">
+          <Link to="/" className="text-xl font-bold text-[#00d4aa] md:text-2xl">
+            InheritVault
           </Link>
 
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex gap-8 items-center">
+          <div className="hidden items-center gap-8 md:flex">
             <nav className="flex gap-6 text-[#00d4aa]">
-              <Link to="/create" className="hover:text-primary transition-colors hover:underline">
+              <Link to="/create" className="transition-colors hover:text-white">
                 Create Vault
               </Link>
-              <Link to="/vaults" className="hover:text-primary transition-colors hover:underline">
+              <Link to="/vaults" className="transition-colors hover:text-white">
                 My Vaults
               </Link>
-              <Link to="/beneficiary" className="hover:text-primary transition-colors hover:underline">
+              <Link to="/beneficiary" className="transition-colors hover:text-white">
                 Beneficiary
               </Link>
             </nav>
 
-            <div>
-              {wallet ? (
-                <div className="flex gap-4 items-center">
-                  <div className="text-sm opacity-80 text-[#00d4aa]">
-                    {wallet.name}
-                  </div>
-                  <button 
-                    className="bg-gray-800 hover:bg-gray-700 text-[#00d4aa] px-4 py-2 rounded-lg border border-[#00d4aa] transition-colors text-sm"
-                    onClick={open}
-                  >
-                    Change
-                  </button>
-                  <button 
-                    className="bg-gray-800 hover:bg-gray-700 text-[#00d4aa] px-4 py-2 rounded-lg border border-[#00d4aa] transition-colors text-sm"
-                    onClick={() => disconnect()}
-                  >
-                    Disconnect
-                  </button>
-                </div>
-              ) : (
-                <button 
-                  className="bg-primary hover:bg-primary-hover text-[#00d4aa] font-semibold px-6 py-2.5 rounded-lg transition-colors border border-[#00d4aa] cursor-pointer"
+            {wallet ? (
+              <div className="flex items-center gap-4">
+                <div className="text-sm text-[#00d4aa]/80">{wallet.name}</div>
+                <button
+                  className="rounded-lg border border-[#00d4aa] bg-gray-800 px-4 py-2 text-sm text-[#00d4aa] transition-colors hover:bg-gray-700"
                   onClick={open}
                 >
-                  Connect Wallet
+                  Change
                 </button>
-              )}
-            </div>
+                <button
+                  className="rounded-lg border border-[#00d4aa] bg-gray-800 px-4 py-2 text-sm text-[#00d4aa] transition-colors hover:bg-gray-700"
+                  onClick={() => disconnect()}
+                >
+                  Disconnect
+                </button>
+              </div>
+            ) : (
+              <button
+                className="rounded-lg border border-[#00d4aa] bg-[#00d4aa] px-6 py-2.5 font-semibold text-black transition-colors hover:bg-[#22e4bd]"
+                onClick={open}
+              >
+                Connect Wallet
+              </button>
+            )}
           </div>
 
-          {/* Mobile Hamburger Button */}
-          <button 
-            className="md:hidden text-[#00d4aa] p-2 focus:outline-none"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          <button
+            className="p-2 text-[#00d4aa] md:hidden"
+            onClick={() => setMobileMenuOpen((openValue) => !openValue)}
             aria-label="Toggle menu"
           >
-            <svg 
-              className="w-6 h-6" 
-              fill="none" 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              strokeWidth="2" 
-              viewBox="0 0 24 24" 
+            <svg
+              className="h-6 w-6"
+              fill="none"
               stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
             >
               {mobileMenuOpen ? (
                 <path d="M6 18L18 6M6 6l12 12" />
@@ -89,27 +81,26 @@ export default function App() {
           </button>
         </div>
 
-        {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="md:hidden mt-4 pb-4 border-t border-gray-700 pt-4">
-            <nav className="flex flex-col gap-4 mb-4">
-              <Link 
-                to="/create" 
-                className="text-[#00d4aa] hover:text-primary transition-colors hover:underline"
+          <div className="mt-4 border-t border-gray-700 pt-4 md:hidden">
+            <nav className="mb-4 flex flex-col gap-4">
+              <Link
+                to="/create"
+                className="text-[#00d4aa] transition-colors hover:text-white"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Create Vault
               </Link>
-              <Link 
-                to="/vaults" 
-                className="text-[#00d4aa] hover:text-primary transition-colors hover:underline"
+              <Link
+                to="/vaults"
+                className="text-[#00d4aa] transition-colors hover:text-white"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 My Vaults
               </Link>
-              <Link 
-                to="/beneficiary" 
-                className="text-[#00d4aa] hover:text-primary transition-colors hover:underline"
+              <Link
+                to="/beneficiary"
+                className="text-[#00d4aa] transition-colors hover:text-white"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Beneficiary Dashboard
@@ -119,25 +110,23 @@ export default function App() {
             <div className="border-t border-gray-700 pt-4">
               {wallet ? (
                 <div className="flex flex-col gap-3">
-                  <div className="text-sm opacity-80 text-[#00d4aa]">
-                    {wallet.name}
-                  </div>
-                  <button 
-                    className="bg-gray-800 hover:bg-gray-700 text-[#00d4aa] px-4 py-2 rounded-lg border border-[#00d4aa] transition-colors text-sm w-full"
+                  <div className="text-sm text-[#00d4aa]/80">{wallet.name}</div>
+                  <button
+                    className="w-full rounded-lg border border-[#00d4aa] bg-gray-800 px-4 py-2 text-sm text-[#00d4aa] transition-colors hover:bg-gray-700"
                     onClick={open}
                   >
                     Change
                   </button>
-                  <button 
-                    className="bg-gray-800 hover:bg-gray-700 text-[#00d4aa] px-4 py-2 rounded-lg border border-[#00d4aa] transition-colors text-sm w-full"
+                  <button
+                    className="w-full rounded-lg border border-[#00d4aa] bg-gray-800 px-4 py-2 text-sm text-[#00d4aa] transition-colors hover:bg-gray-700"
                     onClick={() => disconnect()}
                   >
                     Disconnect
                   </button>
                 </div>
               ) : (
-                <button 
-                  className="bg-primary hover:bg-primary-hover text-[#00d4aa] font-semibold px-6 py-2.5 rounded-lg transition-colors border border-[#00d4aa] cursor-pointer w-full"
+                <button
+                  className="w-full rounded-lg border border-[#00d4aa] bg-[#00d4aa] px-6 py-2.5 font-semibold text-black transition-colors hover:bg-[#22e4bd]"
                   onClick={open}
                 >
                   Connect Wallet
@@ -158,10 +147,8 @@ export default function App() {
         </Routes>
       </main>
 
-      <footer className="border-t border-gray-700 px-4 md:px-8 py-6 text-center text-xs md:text-sm opacity-70">
-        <p>
-          InheritVault – Timelock inheritance on Nervos CKB
-        </p>
+      <footer className="border-t border-gray-700 px-4 py-6 text-center text-xs opacity-70 md:px-8 md:text-sm">
+        <p>InheritVault - scripted inheritance vaults on Nervos CKB</p>
       </footer>
     </div>
   );

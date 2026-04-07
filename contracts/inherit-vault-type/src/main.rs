@@ -1,93 +1,111 @@
 #![no_std]
-#![cfg_attr(not(test), no_main)]
+#![no_main]
 
-#[cfg(not(test))]
-use ckb_std::default_alloc;
-#[cfg(not(test))]
-ckb_std::entry!(program_entry);
-#[cfg(not(test))]
+use ckb_std::{default_alloc, entry};
+
+entry!(program_entry);
 default_alloc!();
-
-use core::{convert::TryInto};
 
 use ckb_std::{
     ckb_constants::Source,
     debug,
-    high_level::{load_cell_data, QueryIter},
+    ckb_types::prelude::*,
+    high_level::{load_cell_data, load_cell_lock, load_script, QueryIter},
+};
+use vault_common::{
+    beneficiary_args_from_lock_args, expected_lock_code_hash_from_type_args, parse_vault_data,
+    VaultError, HASH_TYPE_TYPE,
 };
 
-const VAULT_DATA_MIN_LEN: usize = 24; // Molecule table header size
+fn bytes_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+
+    let mut index = 0usize;
+    while index < left.len() {
+        if left[index] != right[index] {
+            return false;
+        }
+        index += 1;
+    }
+
+    true
+}
+
+fn input_matches_owner_lock(
+    owner_lock: vault_common::ScriptData<'_>,
+) -> bool {
+    for lock in QueryIter::new(load_cell_lock, Source::Input) {
+        let args = lock.args().raw_data();
+        let hash_type = lock.hash_type().as_slice().first().copied().unwrap_or_default();
+
+        if bytes_eq(lock.code_hash().as_slice(), owner_lock.code_hash)
+            && hash_type == owner_lock.hash_type
+            && bytes_eq(args.as_ref(), owner_lock.args)
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn output_uses_expected_vault_lock(
+    lock: &ckb_std::ckb_types::packed::Script,
+    expected_lock_code_hash: &[u8],
+) -> bool {
+    let lock_args = lock.args().raw_data();
+    let hash_type = lock.hash_type().as_slice().first().copied().unwrap_or_default();
+
+    bytes_eq(lock.code_hash().as_slice(), expected_lock_code_hash)
+        && hash_type == HASH_TYPE_TYPE
+        && beneficiary_args_from_lock_args(lock_args.as_ref()).is_ok()
+}
 
 pub fn program_entry() -> i8 {
-    // -------------------------------------------------------------------------
-    // InheritVault - Type Script (Cell Integrity)
-    //
-    // This script enforces the data integrity of the cell.
-    // It verifies that any cell created with this Type Script strictly
-    // adheres to the `VaultCellData` Molecule serialization schema.
-    // This prevents malicious actors from spamming fake IVLT cells.
-    // -------------------------------------------------------------------------
+    let current_script = match load_script() {
+        Ok(script) => script,
+        Err(_) => return VaultError::InvalidTypeArgs.code(),
+    };
+    let current_script_args = current_script.args().raw_data();
+    let expected_lock_code_hash =
+        match expected_lock_code_hash_from_type_args(current_script_args.as_ref()) {
+            Ok(code_hash) => code_hash,
+            Err(error) => return error.code(),
+        };
 
-    // Verify all outputs created in this transaction with this Type Script.
+    let mut saw_group_output = false;
+
     for (i, data) in QueryIter::new(|i, s| load_cell_data(i, s), Source::GroupOutput).enumerate() {
-        if data.len() < VAULT_DATA_MIN_LEN {
-            debug!("Output {}: Cell data too short", i);
-            return -7;
+        saw_group_output = true;
+        let vault = match parse_vault_data(&data) {
+            Ok(vault) => vault,
+            Err(error) => {
+                debug!("Output {} contains malformed vault data", i);
+                return error.code();
+            }
+        };
+
+        let output_lock = match load_cell_lock(i, Source::GroupOutput) {
+            Ok(lock) => lock,
+            Err(_) => return VaultError::UnexpectedVaultLock.code(),
+        };
+
+        if !output_uses_expected_vault_lock(&output_lock, expected_lock_code_hash) {
+            debug!("Output {} does not use the authenticated vault lock", i);
+            return VaultError::UnexpectedVaultLock.code();
         }
 
-        // Molecule structure checks
-        let total_size = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
-        if total_size != data.len() {
-            debug!(
-                "Output {}: Total size mismatch. Expected {}, found {}",
-                i,
-                data.len(),
-                total_size
-            );
-            return -8;
+        if !input_matches_owner_lock(vault.owner_lock) {
+            debug!("Output {} is missing an input from the claimed owner", i);
+            return VaultError::MissingOwnerInput.code();
         }
 
-        let o_owner_address = u32::from_le_bytes(data[4..8].try_into().unwrap()) as usize;
-        let o_owner_name = u32::from_le_bytes(data[8..12].try_into().unwrap()) as usize;
-        let o_unlock_type = u32::from_le_bytes(data[12..16].try_into().unwrap()) as usize;
-        let o_unlock_value = u32::from_le_bytes(data[16..20].try_into().unwrap()) as usize;
-        let o_memo = u32::from_le_bytes(data[20..24].try_into().unwrap()) as usize;
+    }
 
-        // Verify offset boundaries are strictly increasing and valid
-        if o_owner_address != VAULT_DATA_MIN_LEN {
-            return -9;
-        }
-        if o_owner_name < o_owner_address {
-            return -10;
-        }
-        if o_unlock_type < o_owner_name {
-            return -11;
-        }
-        if o_unlock_value < o_unlock_type {
-            return -12;
-        }
-        if o_memo < o_unlock_value {
-            return -13;
-        }
-        if data.len() < o_memo {
-            return -14;
-        }
-
-        // Verify lengths of specific static fields
-
-        // unlock_type should be exactly 1 byte
-        let unlock_type_len = o_unlock_value - o_unlock_type;
-        if unlock_type_len != 1 {
-            debug!("Output {}: Invalid unlock_type length {}", i, unlock_type_len);
-            return -15;
-        }
-
-        // unlock_value should be exactly 8 bytes (Uint64)
-        let unlock_value_len = o_memo - o_unlock_value;
-        if unlock_value_len != 8 {
-            debug!("Output {}: Invalid unlock_value length {}", i, unlock_value_len);
-            return -16;
-        }
+    if !saw_group_output {
+        return 0;
     }
 
     0

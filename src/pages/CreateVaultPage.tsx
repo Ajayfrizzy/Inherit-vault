@@ -2,8 +2,17 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { ccc } from "@ckb-ccc/connector-react";
 import { addVault, getOwnerName, setOwnerName as saveOwnerName } from "../lib/storage";
-import { buildCreateVaultTransaction, signAndSendTransaction } from "../lib/ccc";
-import { MIN_VAULT_CKB, DEFAULT_NETWORK } from "../config";
+import {
+  assertSupportedScriptedBeneficiary,
+  buildCreateVaultTransaction,
+  getLockScriptFromAddress,
+  signAndSendTransaction,
+} from "../lib/ccc";
+import {
+  DEFAULT_NETWORK,
+  MIN_VAULT_CKB,
+  isVaultScriptsReady,
+} from "../config";
 import { calculateMinCapacityCKB } from "../lib/codec";
 import {
   sendVaultCreatedEmail,
@@ -31,6 +40,7 @@ export default function CreateVaultPage() {
   const navigate = useNavigate();
   const { wallet } = ccc.useCcc();
   const signer = ccc.useSigner();
+  const scriptsReady = isVaultScriptsReady(DEFAULT_NETWORK);
 
   const [beneficiaryAddress, setBeneficiaryAddress] = useState("");
   const [amountCKB, setAmountCKB] = useState("");
@@ -40,6 +50,11 @@ export default function CreateVaultPage() {
   const [beneficiaryEmail, setBeneficiaryEmail] = useState("");
   const [ownerDisplayName, setOwnerDisplayName] = useState("");
   const [ownerAddress, setOwnerAddress] = useState("");
+  const [ownerLock, setOwnerLock] = useState<{
+    codeHash: string;
+    hashType: "type" | "data" | "data1" | "data2";
+    args: string;
+  } | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -54,93 +69,99 @@ export default function CreateVaultPage() {
       try {
         const addr = await signer.getRecommendedAddress();
         setOwnerAddress(addr);
+        const lock = await getLockScriptFromAddress(addr, signer.client);
+        setOwnerLock({
+          codeHash: lock.codeHash,
+          hashType: lock.hashType,
+          args: lock.args,
+        });
       } catch {
-        // Ignore wallet address lookup failures here; submit handles them later.
+        // Ignore wallet lookup failures here; submit handles them later.
+        setOwnerLock(null);
       }
     })();
   }, [signer]);
 
   const dynamicMinCKB = useMemo(() => {
-    if (!ownerAddress) return MIN_VAULT_CKB;
+    if (!ownerLock) return MIN_VAULT_CKB;
     const min = calculateMinCapacityCKB({
-      ownerAddress,
+      ownerLock,
       ownerName: ownerDisplayName || undefined,
       unlock: { type: unlockType, value: parseInt(unlockValue, 10) || 0 },
       memo: memo || undefined,
     });
     return Math.max(min, MIN_VAULT_CKB);
-  }, [ownerAddress, ownerDisplayName, unlockType, unlockValue, memo]);
+  }, [ownerLock, ownerDisplayName, unlockType, unlockValue, memo]);
 
-  const validateAddress = (addr: string): boolean => {
-    const mainnetPattern = /^ckb1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{42,}$/;
-    const testnetPattern = /^ckt1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{42,}$/;
-    return mainnetPattern.test(addr) || testnetPattern.test(addr);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError("");
 
     if (!signer) {
-      setError("Please connect your wallet first");
+      setError("Please connect your wallet first.");
+      return;
+    }
+
+    if (!scriptsReady) {
+      setError(
+        `Scripted vault creation is disabled on ${DEFAULT_NETWORK} until the deployed lock and type script metadata are configured in src/config.ts.`
+      );
       return;
     }
 
     if (!beneficiaryAddress.trim()) {
-      setError("Beneficiary address is required");
+      setError("Beneficiary address is required.");
       return;
     }
 
-    if (!validateAddress(beneficiaryAddress.trim())) {
-      setError(
-        "Invalid CKB address format. Must be a valid ckb1... (mainnet) or ckt1... (testnet) address"
-      );
+    if (!ownerAddress.trim()) {
+      setError("Unable to resolve the connected wallet address.");
       return;
     }
 
     const amount = parseFloat(amountCKB);
     if (!amountCKB || Number.isNaN(amount) || amount <= 0) {
-      setError("Please enter a valid amount");
+      setError("Please enter a valid amount.");
       return;
     }
 
     if (amount < dynamicMinCKB) {
       setError(
-        `Amount must be at least ${dynamicMinCKB} CKB to cover cell capacity (${MIN_VAULT_CKB} base + data overhead)`
+        `Amount must be at least ${dynamicMinCKB} CKB to cover cell capacity, typed script overhead, and on-chain data.`
       );
       return;
     }
 
     if (!unlockValue.trim()) {
-      setError("Unlock value is required");
+      setError("Unlock value is required.");
       return;
     }
 
     const unlockVal = parseInt(unlockValue, 10);
     if (Number.isNaN(unlockVal) || unlockVal <= 0) {
       setError(
-        `Invalid unlock value. Must be a positive ${
+        `Invalid unlock value. Enter a positive ${
           unlockType === "blockHeight" ? "block number" : "Unix timestamp"
-        }`
+        }.`
       );
       return;
     }
 
     if (unlockType === "blockHeight") {
-      if (unlockVal < 1000000) {
+      if (unlockVal < 1_000_000) {
         setError(
-          "Block height seems too low. Current CKB mainnet is over 10 million blocks. Please check the value."
+          "Block height seems too low. Check the current CKB explorer height before creating the vault."
         );
         return;
       }
     } else {
       const now = Math.floor(Date.now() / 1000);
       if (unlockVal < now) {
-        setError("Unlock timestamp must be in the future");
+        setError("Unlock timestamp must be in the future.");
         return;
       }
-      if (unlockVal < 1600000000) {
-        setError("Invalid timestamp. Please use Unix timestamp in seconds (not milliseconds)");
+      if (unlockVal < 1_600_000_000) {
+        setError("Invalid timestamp. Use a Unix timestamp in seconds, not milliseconds.");
         return;
       }
     }
@@ -148,9 +169,11 @@ export default function CreateVaultPage() {
     setLoading(true);
 
     try {
+      await assertSupportedScriptedBeneficiary(beneficiaryAddress.trim(), signer.client);
+
       if (ownerDisplayName) saveOwnerName(ownerDisplayName);
 
-      const { tx, outPointIndex } = await buildCreateVaultTransaction(
+      const buildResult = await buildCreateVaultTransaction(
         signer,
         beneficiaryAddress.trim(),
         amount,
@@ -160,11 +183,15 @@ export default function CreateVaultPage() {
         memo || undefined
       );
 
-      const txHash = await signAndSendTransaction(signer, tx);
+      const txHash = await signAndSendTransaction(
+        signer,
+        buildResult.tx,
+        buildResult.requiresSignature
+      );
 
       const vaultRecord = {
         txHash,
-        index: outPointIndex,
+        index: buildResult.outPointIndex,
         network: DEFAULT_NETWORK,
         createdAt: new Date().toISOString(),
         beneficiaryAddress: beneficiaryAddress.trim(),
@@ -174,6 +201,8 @@ export default function CreateVaultPage() {
         beneficiaryEmail: beneficiaryEmail.trim() || undefined,
         ownerAddress,
         ownerName: ownerDisplayName || undefined,
+        format: "scripted" as const,
+        authenticity: "verified" as const,
         status: "pending" as const,
       };
 
@@ -187,20 +216,23 @@ export default function CreateVaultPage() {
           unlock: { type: unlockType, value: unlockVal },
           memo: memo || undefined,
           txHash,
-          index: outPointIndex,
+          index: buildResult.outPointIndex,
           network: DEFAULT_NETWORK,
         }).catch(() => {
-          // Non-blocking email send.
+          // Email delivery is best effort.
         });
       }
 
-      navigate(`/vault/${txHash}/${outPointIndex}`);
+      navigate(`/vault/${txHash}/${buildResult.outPointIndex}`);
     } catch (err: any) {
       console.error("Failed to create vault:", err);
 
-      let errorMessage = "Failed to create vault";
+      let errorMessage = "Failed to create vault.";
 
-      if (err.message?.includes("Invalid CKB address")) {
+      if (err.message?.includes("Only standard secp256k1-blake160")) {
+        errorMessage =
+          "This beneficiary address is not supported for the new scripted vault format yet. Use a standard secp256k1-blake160 CKB address.";
+      } else if (err.message?.includes("Invalid CKB address")) {
         errorMessage = "The beneficiary address format is invalid. Please check and try again.";
       } else if (err.message?.includes("Insufficient")) {
         errorMessage = "Insufficient CKB balance. Please check your wallet balance.";
@@ -218,12 +250,12 @@ export default function CreateVaultPage() {
 
   if (!wallet) {
     return (
-      <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-12">
-        <Link to="/" className="text-sm md:text-base text-[#00d4aa] hover:underline transition-colors">
+      <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-12">
+        <Link to="/" className="text-sm text-[#00d4aa] transition-colors hover:text-white md:text-base">
           {"<- Back to Home"}
         </Link>
-        <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 mt-4">
-          <h2 className="text-2xl font-semibold mb-2">Connect Wallet</h2>
+        <div className="mt-4 rounded-lg border border-gray-700 bg-gray-800 p-6">
+          <h2 className="mb-2 text-2xl font-semibold">Connect Wallet</h2>
           <p className="opacity-80">Please connect your wallet to create a vault.</p>
         </div>
       </div>
@@ -231,35 +263,48 @@ export default function CreateVaultPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-12 text-[#00d4aa]">
+    <div className="mx-auto max-w-4xl px-4 py-6 text-[#00d4aa] md:px-6 md:py-12">
       <div className="mb-6">
-        <Link to="/" className="text-sm md:text-base text-[#00d4aa] hover:underline transition-colors">
+        <Link to="/" className="text-sm text-[#00d4aa] transition-colors hover:text-white md:text-base">
           {"<- Back to Home"}
         </Link>
       </div>
-      <h1 className="text-2xl md:text-4xl font-bold mb-6 md:mb-8">Create Vault</h1>
 
-      <form onSubmit={handleSubmit} className="bg-gray-800 border border-gray-700 rounded-lg p-4 md:p-6">
+      <h1 className="mb-6 text-2xl font-bold md:mb-8 md:text-4xl">Create Vault</h1>
+
+      <div
+        className={`mb-4 rounded-lg border px-4 py-3 text-sm md:text-base ${
+          scriptsReady
+            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+            : "border-yellow-500/40 bg-yellow-500/10 text-yellow-100"
+        }`}
+      >
+        {scriptsReady
+          ? "Scripted vault creation is enabled. New vaults will use the custom lock, an owner-authenticated type script, and Molecule cell data."
+          : `Scripted vault creation is disabled on ${DEFAULT_NETWORK} until the deployed lock and type scripts are configured in src/config.ts.`}
+      </div>
+
+      <form onSubmit={handleSubmit} className="rounded-lg border border-gray-700 bg-gray-800 p-4 md:p-6">
         <div className="mb-6">
-          <label className="block text-sm md:text-base font-medium mb-2">
-            Beneficiary Address <span className="text-red-500">*</span>
+          <label className="mb-2 block text-sm font-medium md:text-base">
+            Beneficiary Address <span className="text-red-400">*</span>
           </label>
           <input
             type="text"
             value={beneficiaryAddress}
             onChange={(e) => setBeneficiaryAddress(e.target.value)}
-            placeholder="ckb1q..."
+            placeholder="ckt1..."
             required
-            className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-950 border border-gray-700 rounded-lg text-gray-200 text-sm md:text-base focus:outline-none focus:border-[#00d4aa] transition-colors"
+            className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 transition-colors focus:border-[#00d4aa] focus:outline-none md:px-4 md:py-3 md:text-base"
           />
-          <div className="text-xs md:text-sm opacity-70 mt-2">
-            The CKB address that will be able to claim the funds after unlock
+          <div className="mt-2 text-xs opacity-70 md:text-sm">
+            New scripted vaults currently support standard secp256k1-blake160 beneficiary addresses only.
           </div>
         </div>
 
         <div className="mb-6">
-          <label className="block text-sm md:text-base font-medium mb-2">
-            Amount (CKB) <span className="text-red-500">*</span>
+          <label className="mb-2 block text-sm font-medium md:text-base">
+            Amount (CKB) <span className="text-red-400">*</span>
           </label>
           <input
             type="number"
@@ -269,37 +314,34 @@ export default function CreateVaultPage() {
             onChange={(e) => setAmountCKB(e.target.value)}
             placeholder={`Minimum ${dynamicMinCKB}`}
             required
-            className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-950 border border-gray-700 rounded-lg text-gray-200 text-sm md:text-base focus:outline-none focus:border-[#00d4aa] transition-colors"
+            className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 transition-colors focus:border-[#00d4aa] focus:outline-none md:px-4 md:py-3 md:text-base"
           />
-          <div className="text-xs md:text-sm opacity-70 mt-2">
-            Amount of CKB to lock (minimum {dynamicMinCKB} CKB for cell capacity + on-chain data)
+          <div className="mt-2 text-xs opacity-70 md:text-sm">
+            Minimum {dynamicMinCKB} CKB covers the typed vault cell, scripted lock overhead, and on-chain metadata.
           </div>
         </div>
 
         <div className="mb-6">
-          <label className="block text-sm md:text-base font-medium mb-2">
-            Unlock Type <span className="text-red-500">*</span>
+          <label className="mb-2 block text-sm font-medium md:text-base">
+            Unlock Type <span className="text-red-400">*</span>
           </label>
           <select
             value={unlockType}
             onChange={(e) => setUnlockType(e.target.value as UnlockType)}
-            className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-950 border border-gray-700 rounded-lg text-gray-200 text-sm md:text-base focus:outline-none focus:border-[#00d4aa] transition-colors"
+            className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 transition-colors focus:border-[#00d4aa] focus:outline-none md:px-4 md:py-3 md:text-base"
           >
             <option value="blockHeight">Block Height</option>
             <option value="timestamp">Timestamp</option>
           </select>
-          <div className="text-xs md:text-sm opacity-70 mt-2">
-            {unlockType === "blockHeight"
-              ? "Unlock when CKB reaches a specific block height"
-              : "Unlock at a specific date/time"}{" "}
-            The claim transaction will encode this unlock using CKB&apos;s native `since` field via CCC.
+          <div className="mt-2 text-xs opacity-70 md:text-sm">
+            The claim transaction will still carry a CKB `since` value, and the scripted lock verifies that it satisfies the on-chain unlock value before the funds can move.
           </div>
         </div>
 
         <div className="mb-6">
-          <label className="block text-sm md:text-base font-medium mb-2">
-            {unlockType === "blockHeight" ? "Unlock Block Height" : "Unlock Date & Time"}{" "}
-            <span className="text-red-500">*</span>
+          <label className="mb-2 block text-sm font-medium md:text-base">
+            {unlockType === "blockHeight" ? "Unlock Block Height" : "Unlock Date and Time"}{" "}
+            <span className="text-red-400">*</span>
           </label>
           {unlockType === "blockHeight" ? (
             <input
@@ -308,7 +350,7 @@ export default function CreateVaultPage() {
               onChange={(e) => setUnlockValue(e.target.value)}
               placeholder="e.g. 12345678"
               required
-              className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-950 border border-gray-700 rounded-lg text-gray-200 text-sm md:text-base focus:outline-none focus:border-[#00d4aa] transition-colors"
+              className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 transition-colors focus:border-[#00d4aa] focus:outline-none md:px-4 md:py-3 md:text-base"
             />
           ) : (
             <input
@@ -324,49 +366,51 @@ export default function CreateVaultPage() {
               }}
               min={toLocalDateTimeInputValue(Math.floor(Date.now() / 1000))}
               required
-              className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-950 border border-gray-700 rounded-lg text-gray-200 text-sm md:text-base focus:outline-none focus:border-[#00d4aa] transition-colors [color-scheme:dark]"
+              className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 transition-colors focus:border-[#00d4aa] focus:outline-none md:px-4 md:py-3 md:text-base [color-scheme:dark]"
             />
           )}
-          <div className="text-xs md:text-sm opacity-70 mt-2">
+          <div className="mt-2 text-xs opacity-70 md:text-sm">
             {unlockType === "blockHeight"
-              ? "Block height when the vault unlocks (check current height on explorer)"
+              ? "Use the explorer to check the current chain height before choosing the unlock block."
               : unlockValue
                 ? `Selected date: ${new Date(parseInt(unlockValue, 10) * 1000).toLocaleString()} (Unix: ${unlockValue})`
-                : "Select the date and time when the vault should unlock"}
+                : "Select the time when the scripted vault should become claimable."}
           </div>
         </div>
 
         <div className="mb-6">
-          <label className="block text-sm md:text-base font-medium mb-2">Your Display Name (optional)</label>
+          <label className="mb-2 block text-sm font-medium md:text-base">
+            Your Display Name (optional)
+          </label>
           <input
             type="text"
             value={ownerDisplayName}
             onChange={(e) => setOwnerDisplayName(e.target.value)}
-            placeholder="e.g. Mom, Dad, Grandma..."
+            placeholder="e.g. Mom, Dad, Grandma"
             maxLength={80}
-            className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-950 border border-gray-700 rounded-lg text-gray-200 text-sm md:text-base focus:outline-none focus:border-[#00d4aa] transition-colors"
+            className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 transition-colors focus:border-[#00d4aa] focus:outline-none md:px-4 md:py-3 md:text-base"
           />
-          <div className="text-xs md:text-sm opacity-70 mt-2">
-            Stored on-chain so the beneficiary can identify who created this vault
+          <div className="mt-2 text-xs opacity-70 md:text-sm">
+            Stored in the owner-authenticated vault payload so the beneficiary can identify who created the vault.
           </div>
         </div>
 
         <div className="mb-6">
-          <label className="block text-sm md:text-base font-medium mb-2">Memo (optional)</label>
+          <label className="mb-2 block text-sm font-medium md:text-base">Memo (optional)</label>
           <textarea
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
-            placeholder="Happy 18th birthday! Love, Mom..."
+            placeholder="A note the beneficiary will see on-chain"
             rows={3}
-            className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-950 border border-gray-700 rounded-lg text-gray-200 text-sm md:text-base focus:outline-none focus:border-[#00d4aa] transition-colors resize-none"
+            className="w-full resize-none rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 transition-colors focus:border-[#00d4aa] focus:outline-none md:px-4 md:py-3 md:text-base"
           />
-          <div className="text-xs md:text-sm opacity-70 mt-2">
-            Stored on-chain - the beneficiary will see this message
+          <div className="mt-2 text-xs opacity-70 md:text-sm">
+            Stored on-chain in the vault cell data.
           </div>
         </div>
 
         <div className="mb-6">
-          <label className="block text-sm md:text-base font-medium mb-2">
+          <label className="mb-2 block text-sm font-medium md:text-base">
             Beneficiary Email (optional)
             {isEmailConfigured() && (
               <span className="ml-2 text-xs font-normal opacity-60">Notifications enabled</span>
@@ -377,31 +421,31 @@ export default function CreateVaultPage() {
             value={beneficiaryEmail}
             onChange={(e) => setBeneficiaryEmail(e.target.value)}
             placeholder="beneficiary@example.com"
-            className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-950 border border-gray-700 rounded-lg text-gray-200 text-sm md:text-base focus:outline-none focus:border-[#00d4aa] transition-colors"
+            className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 transition-colors focus:border-[#00d4aa] focus:outline-none md:px-4 md:py-3 md:text-base"
           />
-          <div className="text-xs md:text-sm opacity-70 mt-2">
+          <div className="mt-2 text-xs opacity-70 md:text-sm">
             {getEmailConfigurationMessage()}
           </div>
         </div>
 
         {error && (
-          <div className="bg-red-500 bg-opacity-10 border border-red-500 text-white px-4 py-3 rounded-lg mb-6 text-sm md:text-base break-words">
+          <div className="mb-6 rounded-lg border border-red-500 bg-red-500/10 px-4 py-3 text-sm text-white md:text-base">
             {error}
           </div>
         )}
 
-        <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row">
           <button
             type="submit"
-            className="flex-1 flex items-center justify-center gap-2 bg-gray-600 hover:bg-gray-700 text-black font-semibold px-6 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={loading}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#00d4aa] px-6 py-3 font-semibold text-black transition-colors hover:bg-[#22e4bd] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={loading || !scriptsReady}
           >
             {loading && <span className="spinner-inline" aria-hidden="true" />}
-            <span>{loading ? "Creating..." : "Create Vault"}</span>
+            <span>{loading ? "Creating..." : "Create Scripted Vault"}</span>
           </button>
           <button
             type="button"
-            className="flex-1 bg-gray-800 hover:bg-gray-700 text-[#00d4aa] px-6 py-3 rounded-lg border border-[#00d4aa] transition-colors disabled:opacity-50"
+            className="flex-1 rounded-lg border border-[#00d4aa] bg-gray-800 px-6 py-3 text-[#00d4aa] transition-colors hover:bg-gray-700 disabled:opacity-50"
             onClick={() => navigate("/")}
             disabled={loading}
           >
@@ -410,13 +454,16 @@ export default function CreateVaultPage() {
         </div>
       </form>
 
-      <div className="bg-gray-800 bg-opacity-10 border border-gray-800 rounded-lg p-4 md:p-6 mt-4">
-        <h3 className="text-lg md:text-xl font-semibold text-yellow-500 mb-3">Before Creating</h3>
-        <ul className="space-y-2 pl-5 list-disc text-sm md:text-base leading-relaxed">
-          <li>Double-check the beneficiary address</li>
-          <li>Ensure you have enough CKB for the vault + transaction fees</li>
-          <li>Remember: funds will be locked until the unlock condition is met</li>
-          <li>For block height locks, check the current block height on the CKB explorer before setting your unlock value</li>
+      <div className="mt-4 rounded-lg border border-gray-700 bg-gray-800/70 p-4 md:p-6">
+        <h3 className="mb-3 text-lg font-semibold text-yellow-300 md:text-xl">
+          Before Creating
+        </h3>
+        <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed md:text-base">
+          <li>Double-check the beneficiary address and confirm it is a standard secp CKB address.</li>
+          <li>Make sure you have enough CKB for the vault plus transaction fees.</li>
+          <li>Remember that the scripted lock enforces the unlock condition on-chain.</li>
+          <li>Your connected wallet lock is embedded into the vault data and authenticated by the type script at creation time.</li>
+          <li>Update the deployed script metadata in src/config.ts before expecting scripted vault creation to succeed on-chain.</li>
         </ul>
       </div>
     </div>

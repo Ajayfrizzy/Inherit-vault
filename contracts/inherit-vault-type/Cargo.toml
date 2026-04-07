@@ -3,8 +3,13 @@ name = "inherit-vault-type"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "inherit-vault-type"
+path = "src/main.rs"
+
 [dependencies]
-ckb-std = "0.16.1"
+ckb-std = { version = "0.16.1", features = ["dummy-atomic"] }
+vault-common = { path = "../vault-common" }
 
 [profile.release]
 strip = true

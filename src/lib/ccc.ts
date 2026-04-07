@@ -1,62 +1,53 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// InheritVault – CCC (Common Chain Connector) Adapter
-//
-// This module wraps CCC SDK calls for wallet connection, address management,
-// and transaction building/signing/sending.
-//
-// ⚠️ IMPORTANT: Since exact CCC method names may vary, places where the exact
-// CCC API is uncertain are marked with TODO comments. These should be replaced
-// with the correct CCC calls after consulting the official CCC documentation.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// InheritVault - CCC (Common Chain Connector) helpers
+// -----------------------------------------------------------------------------
 
 import type { ccc } from "@ckb-ccc/connector-react";
-import { getIndexerUrls, type Network, VAULT_LOCK_SCRIPT, VAULT_TYPE_SCRIPT } from "../config";
-import type { UnlockCondition } from "../types";
+import { type Network } from "../config";
+import type { CkbScript, UnlockCondition, VaultFormat } from "../types";
 import { encodeVaultCellData } from "./codec";
-import type { IndexerScript } from "./vaultIndexer";
+import {
+  assertVaultScriptsReady,
+  buildScriptedVaultLockFromArgs,
+  buildScriptedVaultType,
+  getNetworkFromClient,
+  getScriptedVaultLockFromAddress,
+  getStandardSecpArgsFromAddress,
+  getStandardSecpAddressFromArgs,
+  getStandardSecpLockFromAddress,
+  toCellDep,
+  toIndexerScript,
+  getVaultLockDeployment,
+  getVaultTypeDeployment,
+} from "./vaultScripts";
 
-// ============================================================================
-// WALLET CONNECTION & ADDRESS
-// ============================================================================
+export interface BuiltTransactionResult {
+  tx: any;
+  outPointIndex: number;
+  requiresSignature: boolean;
+}
 
-/**
- * Get the currently connected wallet's CKB address (if any).
- * Uses the CCC signer object from the React hook.
- * 
- * @param signer - The CCC signer instance from useSigner() or useCcc()
- * @returns The recommended address string, or null if not connected
- */
 export async function getWalletAddress(
   signer: ReturnType<typeof ccc.useSigner> | undefined
 ): Promise<string | null> {
   if (!signer) return null;
 
   try {
-    // TODO: Verify exact CCC method name
-    // Based on docs, this should be:
-    const address = await signer.getRecommendedAddress();
-    return address;
+    return await signer.getRecommendedAddress();
   } catch (error) {
     console.error("Failed to get wallet address:", error);
     return null;
   }
 }
 
-/**
- * Get the lock script for a given CKB address.
- * This is needed for building transactions.
- * 
- * @param address - A CKB address string
- * @param signer - The CCC signer instance
- * @returns The lock script object
- */
 export async function getLockScriptFromAddress(
   address: string,
-  signer: any
+  signerOrClient: any
 ): Promise<any> {
   try {
     const { ccc } = await import("@ckb-ccc/connector-react");
-    const addressObj = await ccc.Address.fromString(address, signer.client);
+    const client = signerOrClient.client ?? signerOrClient;
+    const addressObj = await ccc.Address.fromString(address, client);
     return addressObj.script;
   } catch (error) {
     console.error("Failed to convert address to lock script:", error);
@@ -64,32 +55,33 @@ export async function getLockScriptFromAddress(
   }
 }
 
-/**
- * Get the lock script for a CKB address in the RPC/Indexer snake_case format.
- * Useful for indexer queries.
- */
 export async function getLockScriptForIndexer(
   address: string,
-  signer: any
-): Promise<IndexerScript> {
-  const { ccc } = await import("@ckb-ccc/connector-react");
-  const addressObj = await ccc.Address.fromString(address, signer.client);
-  const script = addressObj.script;
-  return {
-    code_hash: script.codeHash,
-    hash_type: script.hashType,
-    args: script.args,
-  };
+  signerOrClient: any
+): Promise<CkbScript> {
+  const script = await getLockScriptFromAddress(address, signerOrClient);
+  return toIndexerScript(script);
+}
+
+export async function getScriptedVaultLockForIndexer(
+  address: string,
+  signerOrClient: any,
+  network: Network
+): Promise<CkbScript> {
+  const client = signerOrClient.client ?? signerOrClient;
+  const script = await getScriptedVaultLockFromAddress(address, client, network);
+  return toIndexerScript(script);
 }
 
 export async function getAddressFromIndexerLock(
-  lockScript: IndexerScript,
+  lockScript: CkbScript,
   network: Network
 ): Promise<string> {
   const { ccc } = await import("@ckb-ccc/connector-react");
-  const client = network === "testnet"
-    ? new ccc.ClientPublicTestnet()
-    : new ccc.ClientPublicMainnet();
+  const client =
+    network === "testnet"
+      ? new ccc.ClientPublicTestnet()
+      : new ccc.ClientPublicMainnet();
 
   return ccc.Address.fromScript(
     {
@@ -101,6 +93,35 @@ export async function getAddressFromIndexerLock(
   ).toString();
 }
 
+export async function getAddressFromCccScript(
+  script: { codeHash: string; hashType: string; args: string },
+  network: Network
+): Promise<string> {
+  return getAddressFromIndexerLock(
+    {
+      code_hash: script.codeHash,
+      hash_type: script.hashType as CkbScript["hash_type"],
+      args: script.args,
+    },
+    network
+  );
+}
+
+export async function getBeneficiaryAddressFromScriptedLock(
+  lockScript: CkbScript,
+  network: Network
+): Promise<string> {
+  return getStandardSecpAddressFromArgs(lockScript.args, network);
+}
+
+export async function assertSupportedScriptedBeneficiary(
+  address: string,
+  signerOrClient: any
+): Promise<string> {
+  const client = signerOrClient.client ?? signerOrClient;
+  return getStandardSecpArgsFromAddress(address, client);
+}
+
 function buildAbsoluteSince(cccApi: any, unlock: UnlockCondition) {
   return cccApi.Since.from({
     relative: "absolute",
@@ -109,27 +130,29 @@ function buildAbsoluteSince(cccApi: any, unlock: UnlockCondition) {
   });
 }
 
-// ============================================================================
-// TRANSACTION BUILDING – CREATE VAULT
-// ============================================================================
+export function buildScriptedVaultOutput(
+  network: Network,
+  beneficiaryArgs: string,
+  capacity: bigint
+) {
+  return {
+    lock: buildScriptedVaultLockFromArgs(beneficiaryArgs, network),
+    type: buildScriptedVaultType(network),
+    capacity,
+  };
+}
 
-/**
- * Build a transaction that creates a vault cell.
- *
- * The vault cell:
- *  - Has the beneficiary's lock script
- *  - Contains the specified amount of CKB in capacity
- *  - Stores vault metadata (owner, unlock condition, memo) in output_data
- *
- * @param signer - The CCC signer (creator/funder of the vault)
- * @param beneficiaryAddress - CKB address of the person who can claim
- * @param amountCKB - Amount to lock (in CKB, e.g. 250)
- * @param unlock - The timelock condition
- * @param ownerAddress - CKB address of the vault creator
- * @param ownerName - Optional display name of the creator
- * @param memo - Optional memo stored on-chain
- * @returns An object with { tx, outPointIndex }
- */
+export function getScriptedClaimCellDeps(network: Network) {
+  const lockDeployment = getVaultLockDeployment(network);
+  const typeDeployment = getVaultTypeDeployment(network);
+
+  if (!lockDeployment || !typeDeployment) {
+    throw new Error(`Vault scripts are not configured for ${network}.`);
+  }
+
+  return [toCellDep(lockDeployment), toCellDep(typeDeployment)];
+}
+
 export async function buildCreateVaultTransaction(
   signer: any,
   beneficiaryAddress: string,
@@ -138,89 +161,120 @@ export async function buildCreateVaultTransaction(
   ownerAddress: string,
   ownerName?: string,
   memo?: string
-): Promise<{ tx: any; outPointIndex: number }> {
-
+): Promise<BuiltTransactionResult> {
   try {
     const { ccc } = await import("@ckb-ccc/connector-react");
+    const network = getNetworkFromClient(signer.client);
+    assertVaultScriptsReady(network);
 
-    // Get beneficiary lock script from address
-    const beneficiaryLock = await getLockScriptFromAddress(beneficiaryAddress, signer);
-
-    // Encode vault metadata into cell data
+    const beneficiaryArgs = await getStandardSecpArgsFromAddress(
+      beneficiaryAddress,
+      signer.client
+    );
+    const ownerLock = await getLockScriptFromAddress(ownerAddress, signer.client);
     const cellData = encodeVaultCellData({
-      ownerAddress,
+      ownerLock: {
+        codeHash: ownerLock.codeHash,
+        hashType: ownerLock.hashType,
+        args: ownerLock.args,
+      },
       ownerName: ownerName || undefined,
       unlock,
       memo: memo || undefined,
     });
 
-    // Create transaction with vault output + on-chain data
     const tx = ccc.Transaction.from({
       outputs: [
-        {
-          lock: beneficiaryLock,
-          capacity: ccc.fixedPointFrom(amountCKB),
-        },
+        buildScriptedVaultOutput(
+          network,
+          beneficiaryArgs,
+          ccc.fixedPointFrom(amountCKB)
+        ),
       ],
       outputsData: [cellData],
     });
 
-    // Complete inputs from creator's wallet to cover capacity + fees
+    const typeDeployment = getVaultTypeDeployment(network);
+    if (!typeDeployment) {
+      throw new Error(`Vault type script is not configured for ${network}.`);
+    }
+    tx.addCellDeps(toCellDep(typeDeployment));
+
     await tx.completeInputsByCapacity(signer);
     await tx.completeFeeBy(signer);
 
-    // The vault output is the first output (index 0)
-    return { tx, outPointIndex: 0 };
-
+    return { tx, outPointIndex: 0, requiresSignature: true };
   } catch (error) {
     console.error("Failed to build create vault transaction:", error);
     throw error;
   }
 }
 
-// ============================================================================
-// TRANSACTION BUILDING – CLAIM VAULT
-// ============================================================================
-
-/**
- * Build a transaction that claims (spends) a vault cell.
- * 
- * The transaction:
- *  - Spends the vault cell as an input
- *  - Sets the input's "since" field to satisfy the timelock
- *  - Sends the capacity to the beneficiary's address (or another destination)
- * 
- * @param signer - The CCC signer (must be the beneficiary)
- * @param vaultOutPoint - The OutPoint of the vault cell
- * @param unlock - The timelock condition (used to set "since")
- * @param recipientAddress - Where to send the claimed CKB (usually beneficiary's own address)
- * @returns The built transaction
- */
 export async function buildClaimVaultTransaction(
   signer: any,
   vaultOutPoint: { txHash: string; index: number },
   unlock: UnlockCondition,
-  recipientAddress: string
-): Promise<any> {
-  
+  beneficiaryAddress: string,
+  format: VaultFormat = "legacy"
+): Promise<{ tx: any; requiresSignature: boolean }> {
   try {
     const { ccc } = await import("@ckb-ccc/connector-react");
-    
-    // Get recipient lock script
-    const recipientLock = await getLockScriptFromAddress(recipientAddress, signer);
+    const network = getNetworkFromClient(signer.client);
     const since = buildAbsoluteSince(ccc, unlock);
-    
-    // Create cell dependency for the vault cell
+
     const vaultCell = await signer.client.getCell({
       txHash: vaultOutPoint.txHash,
       index: vaultOutPoint.index,
     });
-    
+
     if (!vaultCell) {
       throw new Error("Vault cell not found");
     }
-    
-    // Build transaction
+
+    if (format === "scripted") {
+      assertVaultScriptsReady(network);
+
+      const payoutLock = await getStandardSecpLockFromAddress(
+        beneficiaryAddress,
+        signer.client
+      );
+
+      const tx = ccc.Transaction.from({
+        cellDeps: getScriptedClaimCellDeps(network),
+        inputs: [
+          {
+            previousOutput: {
+              txHash: vaultOutPoint.txHash,
+              index: vaultOutPoint.index,
+            },
+            since,
+          },
+        ],
+        outputs: [
+          {
+            lock: payoutLock,
+            capacity: vaultCell.cellOutput.capacity,
+          },
+        ],
+        outputsData: ["0x"],
+      });
+
+      const estimatedFee = tx.estimateFee(1000n);
+      const inputCapacity = ccc.numFrom(vaultCell.cellOutput.capacity);
+      const outputCapacity = inputCapacity - estimatedFee;
+
+      if (outputCapacity <= 0n) {
+        throw new Error("Claim transaction fee exceeds the vault capacity.");
+      }
+
+      tx.outputs[0].capacity = outputCapacity;
+      return { tx, requiresSignature: false };
+    }
+
+    const recipientLock = await getLockScriptFromAddress(
+      beneficiaryAddress,
+      signer.client
+    );
     const tx = ccc.Transaction.from({
       inputs: [
         {
@@ -237,63 +291,38 @@ export async function buildClaimVaultTransaction(
           capacity: vaultCell.cellOutput.capacity,
         },
       ],
+      outputsData: ["0x"],
     });
-    
-    // Complete fee (may add change output)
-    await tx.completeFeeBy(signer);
-    
-    return tx;
 
+    await tx.completeFeeBy(signer);
+    return { tx, requiresSignature: true };
   } catch (error) {
     console.error("Failed to build claim vault transaction:", error);
     throw error;
   }
 }
 
-// ============================================================================
-// TRANSACTION SIGNING & SENDING
-// ============================================================================
-
-/**
- * Sign and send a transaction using the connected wallet.
- * 
- * @param signer - The CCC signer
- * @param tx - The transaction to sign and send
- * @returns The transaction hash
- */
 export async function signAndSendTransaction(
   signer: any,
-  tx: any
+  tx: any,
+  requiresSignature = true
 ): Promise<string> {
   try {
-    const txHash = await signer.sendTransaction(tx);
-    return txHash;
+    return requiresSignature
+      ? await signer.sendTransaction(tx)
+      : await signer.client.sendTransaction(tx);
   } catch (error) {
-    console.error("Failed to sign and send transaction:", error);
+    console.error("Failed to send transaction:", error);
     throw error;
   }
 }
 
-// ============================================================================
-// HELPER: Check if timelock is satisfied
-// ============================================================================
-
-/**
- * Check if the current chain state satisfies the unlock condition.
- * 
- * @param unlock - The unlock condition
- * @param currentBlockHeight - Current tip block height
- * @param currentTimestamp - Current tip timestamp (Unix seconds)
- * @returns true if unlocked, false otherwise
- */
 export function isUnlockConditionSatisfied(
   unlock: UnlockCondition,
   currentBlockHeight: number,
   currentTimestamp: number
 ): boolean {
-  if (unlock.type === "blockHeight") {
-    return currentBlockHeight >= unlock.value;
-  } else {
-    return currentTimestamp >= unlock.value;
-  }
+  return unlock.type === "blockHeight"
+    ? currentBlockHeight >= unlock.value
+    : currentTimestamp >= unlock.value;
 }

@@ -1,8 +1,0 @@
-cargo:rerun-if-changed=ckb.toml
-cargo:rerun-if-changed=ckb-miner.toml
-cargo:rerun-if-changed=default.db-options
-cargo:rerun-if-changed=specs/testnet.toml
-cargo:rerun-if-changed=specs/staging.toml
-cargo:rerun-if-changed=specs/dev.toml
-cargo:rerun-if-changed=specs/mainnet.toml
-cargo:rerun-if-changed=specs/preview.toml

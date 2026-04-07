@@ -1,8 +1,15 @@
+array Byte32 [byte; 32];
 array Uint64 [byte; 8];
 vector Bytes <byte>;
 
+table Script {
+    code_hash: Byte32,
+    hash_type: byte,
+    args: Bytes,
+}
+
 table VaultCellData {
-    owner_address: Bytes,
+    owner_lock: Script,
     owner_name: Bytes,
     unlock_type: byte,
     unlock_value: Uint64,
