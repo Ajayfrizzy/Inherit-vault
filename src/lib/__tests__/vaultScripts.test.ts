@@ -14,22 +14,22 @@ describe("vault script configuration helpers", () => {
     expect(isVaultScriptsReady(DEFAULT_NETWORK)).toBe(true);
     expect(getVaultLockDeployment(DEFAULT_NETWORK)).toMatchObject({
       codeHash:
-        "0x723b155f49d446868674b2d944b7a5b2005ed6743f031adcb9b6ba993bfc1a9d",
+        "0xf6898d947d866763e5e51560940354554abed36060bc63a3a4b6abab4df7fee1",
       hashType: "type",
       outPoint: {
         txHash:
-          "0x6aed899f75a4257bb17ae20043f53261ab896585b2cd9027e6f6aef0cad23de9",
+          "0x090f54d28a1863879d88fbc37a83c7ce61724993d5095cc7e9470a0c94b588fc",
         index: 0,
       },
       depType: "code",
     });
     expect(getVaultTypeDeployment(DEFAULT_NETWORK)).toMatchObject({
       codeHash:
-        "0x79319d084289125a3b8434d70353d44b39b164908d94f5b5f6b186733bbeabd5",
+        "0x43142c6355bbe4db242f423cd8e4411c397b57cc6880d17fd3d054ae3c3e0c0e",
       hashType: "type",
       outPoint: {
         txHash:
-          "0x6aed899f75a4257bb17ae20043f53261ab896585b2cd9027e6f6aef0cad23de9",
+          "0x090f54d28a1863879d88fbc37a83c7ce61724993d5095cc7e9470a0c94b588fc",
         index: 1,
       },
       depType: "code",
@@ -45,20 +45,20 @@ describe("vault script configuration helpers", () => {
       )
     ).toEqual({
       codeHash:
-        "0x723b155f49d446868674b2d944b7a5b2005ed6743f031adcb9b6ba993bfc1a9d",
+        "0xf6898d947d866763e5e51560940354554abed36060bc63a3a4b6abab4df7fee1",
       hashType: "type",
       args: "0x1234567890abcdef1234567890abcdef12345678",
     });
 
     expect(getScriptedVaultTypeArgs(DEFAULT_NETWORK)).toBe(
-      "0x723b155f49d446868674b2d944b7a5b2005ed6743f031adcb9b6ba993bfc1a9d"
+      "0xf6898d947d866763e5e51560940354554abed36060bc63a3a4b6abab4df7fee1"
     );
 
     expect(buildScriptedVaultType(DEFAULT_NETWORK)).toEqual({
       codeHash:
-        "0x79319d084289125a3b8434d70353d44b39b164908d94f5b5f6b186733bbeabd5",
+        "0x43142c6355bbe4db242f423cd8e4411c397b57cc6880d17fd3d054ae3c3e0c0e",
       hashType: "type",
-      args: "0x723b155f49d446868674b2d944b7a5b2005ed6743f031adcb9b6ba993bfc1a9d",
+      args: "0xf6898d947d866763e5e51560940354554abed36060bc63a3a4b6abab4df7fee1",
     });
   });
 });

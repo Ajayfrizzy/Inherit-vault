@@ -3,7 +3,7 @@
 // -----------------------------------------------------------------------------
 
 import type { ccc } from "@ckb-ccc/connector-react";
-import { type Network } from "../config";
+import { TIMESTAMP_CLAIM_BUFFER_SECONDS, type Network } from "../config";
 import type { CkbScript, UnlockCondition, VaultFormat } from "../types";
 import { encodeVaultCellData } from "./codec";
 import {
@@ -308,9 +308,20 @@ export async function signAndSendTransaction(
   requiresSignature = true
 ): Promise<string> {
   try {
-    return requiresSignature
-      ? await signer.sendTransaction(tx)
-      : await signer.client.sendTransaction(tx);
+    if (requiresSignature) {
+      return await signer.sendTransaction(tx);
+    }
+
+    // Scripted claims don't require wallet signatures, so broadcast them
+    // directly through a public RPC client to avoid wallet-specific tx rewriting.
+    const { ccc } = await import("@ckb-ccc/connector-react");
+    const network = getNetworkFromClient(signer.client);
+    const publicClient =
+      network === "testnet"
+        ? new ccc.ClientPublicTestnet()
+        : new ccc.ClientPublicMainnet();
+
+    return await publicClient.sendTransaction(tx);
   } catch (error) {
     console.error("Failed to send transaction:", error);
     throw error;
@@ -324,5 +335,5 @@ export function isUnlockConditionSatisfied(
 ): boolean {
   return unlock.type === "blockHeight"
     ? currentBlockHeight >= unlock.value
-    : currentTimestamp >= unlock.value;
+    : currentTimestamp >= unlock.value + TIMESTAMP_CLAIM_BUFFER_SECONDS;
 }

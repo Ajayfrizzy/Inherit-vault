@@ -114,6 +114,10 @@ fn beneficiary_args() -> Vec<u8> {
     vec![0x42; 20]
 }
 
+fn absolute_timestamp_since(value: u64) -> u64 {
+    (1u64 << 62) | value
+}
+
 fn beneficiary_lock(args: &[u8]) -> Script {
     Script::new_builder()
         .code_hash(Byte32::from_slice(&STANDARD_SECP_CODE_HASH).expect("standard secp code hash"))
@@ -364,6 +368,39 @@ fn lock_rejects_metric_mismatch() {
         context.verify_tx(&tx, MAX_CYCLES).is_err(),
         "lock script should reject timestamp vaults claimed with block-number since"
     );
+}
+
+#[test]
+fn lock_allows_timestamp_claim_to_beneficiary_when_unlock_is_reached() {
+    let beneficiary_args = beneficiary_args();
+    let input_data = build_vault_data(
+        &beneficiary_lock(&beneficiary_args),
+        b"Seun",
+        UNLOCK_TYPE_TIMESTAMP,
+        100,
+        b"inheritance vault",
+    );
+
+    let (context, tx) = build_lock_claim_tx(
+        input_data,
+        absolute_timestamp_since(100),
+        beneficiary_lock(&beneficiary_args),
+        BASE_CAPACITY - 10_000,
+    );
+
+    let encoded_since: u64 = tx
+        .data()
+        .raw()
+        .inputs()
+        .get(0)
+        .expect("first input")
+        .since()
+        .unpack();
+    assert_eq!(encoded_since, absolute_timestamp_since(100));
+
+    context
+        .verify_tx(&tx, MAX_CYCLES)
+        .expect("lock script should accept a timestamp claim that meets the unlock time");
 }
 
 #[test]

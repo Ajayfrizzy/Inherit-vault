@@ -114,6 +114,21 @@ export async function getTipHeader(network: Network): Promise<TipHeader> {
 }
 
 /**
+ * Get a block header timestamp by block hash.
+ * Returns Unix timestamp in seconds.
+ */
+export async function getBlockTimestampByHash(
+  network: Network,
+  blockHash: string
+): Promise<number | null> {
+  const { rpcUrl } = NETWORK_CONFIGS[network];
+  const header = await rpcCall(rpcUrl, "get_header", [blockHash]);
+  if (!header?.timestamp) return null;
+
+  return parseInt(header.timestamp, 16) / 1000;
+}
+
+/**
  * Get transaction status (to check if a vault tx is confirmed).
  * Uses CCC's getTransaction first, then falls back to raw RPC.
  */

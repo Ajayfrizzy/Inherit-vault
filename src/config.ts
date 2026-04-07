@@ -56,6 +56,8 @@ export function getIndexerUrls(network: Network): string[] {
 }
 
 export const MIN_VAULT_CKB = 250;
+export const TIMESTAMP_CLAIM_BUFFER_SECONDS = 120;
+export const MIN_TIMESTAMP_UNLOCK_LEAD_SECONDS = 600;
 
 export const EMAIL_API_URL =
   import.meta.env.VITE_EMAIL_API_URL ?? "/api/send-email";
@@ -69,22 +71,22 @@ export const VAULT_SCRIPT_DEPLOYMENTS: Record<Network, VaultScriptConfig> = {
   testnet: {
     lock: {
       codeHash:
-        "0x723b155f49d446868674b2d944b7a5b2005ed6743f031adcb9b6ba993bfc1a9d",
+        "0xf6898d947d866763e5e51560940354554abed36060bc63a3a4b6abab4df7fee1",
       hashType: "type",
       outPoint: {
         txHash:
-          "0x6aed899f75a4257bb17ae20043f53261ab896585b2cd9027e6f6aef0cad23de9",
+          "0x090f54d28a1863879d88fbc37a83c7ce61724993d5095cc7e9470a0c94b588fc",
         index: 0,
       },
       depType: "code",
     },
     type: {
       codeHash:
-        "0x79319d084289125a3b8434d70353d44b39b164908d94f5b5f6b186733bbeabd5",
+        "0x43142c6355bbe4db242f423cd8e4411c397b57cc6880d17fd3d054ae3c3e0c0e",
       hashType: "type",
       outPoint: {
         txHash:
-          "0x6aed899f75a4257bb17ae20043f53261ab896585b2cd9027e6f6aef0cad23de9",
+          "0x090f54d28a1863879d88fbc37a83c7ce61724993d5095cc7e9470a0c94b588fc",
         index: 1,
       },
       depType: "code",

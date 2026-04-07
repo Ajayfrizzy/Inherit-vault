@@ -90,7 +90,7 @@ pub fn program_entry() -> i8 {
         };
 
         let is_absolute = (since >> 63) == 0;
-        let is_timestamp = ((since >> 61) & 0b11) == 0b01;
+        let is_timestamp = ((since >> 61) & 0b11) == 0b10;
         let cell_is_timestamp = vault.unlock_type == UNLOCK_TYPE_TIMESTAMP;
 
         if !is_absolute {

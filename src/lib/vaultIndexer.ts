@@ -14,7 +14,11 @@ import {
   getAddressFromIndexerLock,
   getBeneficiaryAddressFromScriptedLock,
 } from "./ccc";
-import { getCellByOutPoint, getTransactionStatus } from "./ckb";
+import {
+  getBlockTimestampByHash,
+  getCellByOutPoint,
+  getTransactionStatus,
+} from "./ckb";
 import {
   decodeVaultCellData,
   type VaultCellPayload,
@@ -32,6 +36,7 @@ export interface OnChainVault {
   beneficiaryAddress: string;
   data: VaultCellPayload;
   blockNumber?: number;
+  blockTimestamp?: number;
   status: "live";
   format: "scripted";
   authenticity: "verified";
@@ -46,6 +51,7 @@ export interface VaultFromTx {
   txStatus: "pending" | "proposed" | "committed" | "rejected" | "unknown";
   isLive: boolean;
   blockNumber?: number;
+  blockTimestamp?: number;
   format: VaultFormat;
   authenticity: VaultAuthenticity;
   isAuthentic: boolean;
@@ -100,6 +106,7 @@ async function parseScriptedVaultCell(network: Network, cell: any): Promise<OnCh
     ).catch(() => ""),
     data: await hydrateVaultPayload(network, decoded),
     blockNumber: cell.block_number ? parseInt(cell.block_number, 16) : undefined,
+    blockTimestamp: undefined,
     status: "live",
     format: "scripted",
     authenticity: "verified",
@@ -115,6 +122,8 @@ async function parseVaultFromTransactionOutput(
   txStatus: VaultFromTx["txStatus"],
   isLive: boolean,
   blockNumber?: number
+  ,
+  blockTimestamp?: number
 ): Promise<VaultFromTx | null> {
   const decoded = decodeVaultCellData(outputData);
   if (!decoded) return null;
@@ -135,6 +144,7 @@ async function parseVaultFromTransactionOutput(
     txStatus,
     isLive,
     blockNumber,
+    blockTimestamp,
     format: scripted ? "scripted" : "legacy",
     authenticity: scripted ? "verified" : "legacy",
     isAuthentic: scripted,
@@ -251,6 +261,12 @@ export async function fetchVaultFromTransaction(
     txStatus === "committed"
       ? await getCellByOutPoint(network, { txHash, index })
       : null;
+  const blockTimestamp =
+    txResult.tx_status?.block_hash && txStatus === "committed"
+      ? await getBlockTimestampByHash(network, txResult.tx_status.block_hash).catch(
+          () => null
+        )
+      : null;
 
   return parseVaultFromTransactionOutput(
     network,
@@ -262,7 +278,8 @@ export async function fetchVaultFromTransaction(
     liveCell !== null,
     txResult.tx_status?.block_number
       ? parseInt(txResult.tx_status.block_number, 16)
-      : undefined
+      : undefined,
+    blockTimestamp ?? undefined
   );
 }
 

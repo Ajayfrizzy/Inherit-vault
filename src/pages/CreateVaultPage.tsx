@@ -10,9 +10,11 @@ import {
 } from "../lib/ccc";
 import {
   DEFAULT_NETWORK,
+  MIN_TIMESTAMP_UNLOCK_LEAD_SECONDS,
   MIN_VAULT_CKB,
   isVaultScriptsReady,
 } from "../config";
+import { getTipHeader } from "../lib/ckb";
 import { calculateMinCapacityCKB } from "../lib/codec";
 import {
   sendVaultCreatedEmail,
@@ -156,12 +158,21 @@ export default function CreateVaultPage() {
       }
     } else {
       const now = Math.floor(Date.now() / 1000);
+      const tip = await getTipHeader(DEFAULT_NETWORK).catch(() => null);
+      const minUnlock = Math.max(now, tip?.timestamp ?? 0) + MIN_TIMESTAMP_UNLOCK_LEAD_SECONDS;
+
       if (unlockVal < now) {
         setError("Unlock timestamp must be in the future.");
         return;
       }
       if (unlockVal < 1_600_000_000) {
         setError("Invalid timestamp. Use a Unix timestamp in seconds, not milliseconds.");
+        return;
+      }
+      if (unlockVal < minUnlock) {
+        setError(
+          `Unlock timestamp must be at least ${MIN_TIMESTAMP_UNLOCK_LEAD_SECONDS / 60} minute(s) in the future so the vault can confirm on-chain before it becomes claimable.`
+        );
         return;
       }
     }

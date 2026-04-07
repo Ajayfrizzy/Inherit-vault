@@ -65,6 +65,9 @@ export default function VaultListPage() {
 
               const merged: VaultRecord = {
                 ...vault,
+                createdAt: result.blockTimestamp
+                  ? new Date(result.blockTimestamp * 1000).toISOString()
+                  : vault.createdAt,
                 beneficiaryAddress: result.beneficiaryAddress || vault.beneficiaryAddress,
                 amountCKB: result.capacityCKB,
                 unlock: result.data.unlock,
@@ -153,7 +156,9 @@ export default function VaultListPage() {
         txHash: hash,
         index: 0,
         network: "testnet",
-        createdAt: new Date().toISOString(),
+        createdAt: result.blockTimestamp
+          ? new Date(result.blockTimestamp * 1000).toISOString()
+          : new Date().toISOString(),
         beneficiaryAddress: result.beneficiaryAddress,
         amountCKB: result.capacityCKB,
         unlock: result.data.unlock,

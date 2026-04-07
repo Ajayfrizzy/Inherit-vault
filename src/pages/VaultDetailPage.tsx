@@ -9,7 +9,11 @@ import {
   isUnlockConditionSatisfied,
 } from "../lib/ccc";
 import { fetchVaultFromTransaction, type VaultFromTx } from "../lib/vaultIndexer";
-import { NETWORK_CONFIGS, DEFAULT_NETWORK } from "../config";
+import {
+  NETWORK_CONFIGS,
+  DEFAULT_NETWORK,
+  TIMESTAMP_CLAIM_BUFFER_SECONDS,
+} from "../config";
 import { sendVaultClaimableEmail } from "../lib/email";
 import type { VaultRecord, UnlockCondition } from "../types";
 
@@ -77,7 +81,9 @@ export default function VaultDetailPage() {
             txHash,
             index: vaultIndex,
             network,
-            createdAt: cached?.createdAt || new Date().toISOString(),
+            createdAt: chainResult.blockTimestamp
+              ? new Date(chainResult.blockTimestamp * 1000).toISOString()
+              : cached?.createdAt || new Date().toISOString(),
             beneficiaryAddress:
               chainResult.beneficiaryAddress || cached?.beneficiaryAddress || "",
             amountCKB: chainResult.capacityCKB,
@@ -219,8 +225,14 @@ export default function VaultDetailPage() {
         } else {
           const requiredTime = new Date(vault.unlock.value * 1000).toLocaleString();
           const currentTime = new Date(currentTimestamp * 1000).toLocaleString();
-          errorMessage = `The vault is not yet unlocked. Current time: ${currentTime}, required time: ${requiredTime}.`;
+          errorMessage = `The vault is not yet unlocked on-chain. Current chain time: ${currentTime}, required unlock time: ${requiredTime}. Timestamp-based claims can require about ${TIMESTAMP_CLAIM_BUFFER_SECONDS / 60} extra minute(s) after the displayed unlock time.`;
         }
+      } else if (
+        err.message?.includes("error code -21") ||
+        err.message?.includes("SinceMetricMismatch")
+      ) {
+        errorMessage =
+          "The chain rejected this timestamp claim as not yet mature. This usually happens when the displayed unlock time has passed but the chain's timestamp rules have not fully caught up yet. Wait another minute or two, refresh the page, and try again.";
       } else if (err.message?.includes("not found")) {
         errorMessage = "Vault cell not found on chain. It may have already been spent.";
       } else if (err.message) {
@@ -274,6 +286,7 @@ export default function VaultDetailPage() {
         : "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
   const badge = formatBadge(vault);
   const unlockTone = isUnlocked ? "text-emerald-300" : "text-yellow-100";
+  const timestampBufferMinutes = TIMESTAMP_CLAIM_BUFFER_SECONDS / 60;
 
   let actionTitle = "Claim Status";
   let actionBody =
@@ -461,6 +474,14 @@ export default function VaultDetailPage() {
               {vault.status === "spent" && (
                 <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-5 py-3 text-sm font-medium text-red-200">
                   This vault has already been claimed or spent.
+                </div>
+              )}
+
+              {vault.unlock.type === "timestamp" && vault.status === "live" && (
+                <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-100">
+                  Timestamp-based claims can require about {timestampBufferMinutes} extra
+                  minute(s) after the displayed unlock time because the chain's unlock
+                  rules can lag slightly behind the latest UI time.
                 </div>
               )}
 
