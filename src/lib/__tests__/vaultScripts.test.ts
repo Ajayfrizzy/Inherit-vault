@@ -14,23 +14,23 @@ describe("vault script configuration helpers", () => {
     expect(isVaultScriptsReady(DEFAULT_NETWORK)).toBe(true);
     expect(getVaultLockDeployment(DEFAULT_NETWORK)).toMatchObject({
       codeHash:
-        "0x7ecd173ed7061f9fb68ea2dba0df5d16350f477448ebc2c3a409b624482dfcfe",
+        "0x723b155f49d446868674b2d944b7a5b2005ed6743f031adcb9b6ba993bfc1a9d",
       hashType: "type",
       outPoint: {
         txHash:
-          "0x7c570127a39da08f30ae0d7fef0226448abb3683beee927848f45dd531effbcc",
+          "0x6aed899f75a4257bb17ae20043f53261ab896585b2cd9027e6f6aef0cad23de9",
         index: 0,
       },
       depType: "code",
     });
     expect(getVaultTypeDeployment(DEFAULT_NETWORK)).toMatchObject({
       codeHash:
-        "0x402a2566a51acbe72fbd043168cb5100e9a1c78f9201f50def5f3f4dd35080a6",
+        "0x79319d084289125a3b8434d70353d44b39b164908d94f5b5f6b186733bbeabd5",
       hashType: "type",
       outPoint: {
         txHash:
-          "0x5b80085bae3bb71db90f4ab0e9bf448c2d40824a8367e273f29da8d029688bbb",
-        index: 0,
+          "0x6aed899f75a4257bb17ae20043f53261ab896585b2cd9027e6f6aef0cad23de9",
+        index: 1,
       },
       depType: "code",
     });
@@ -45,20 +45,20 @@ describe("vault script configuration helpers", () => {
       )
     ).toEqual({
       codeHash:
-        "0x7ecd173ed7061f9fb68ea2dba0df5d16350f477448ebc2c3a409b624482dfcfe",
+        "0x723b155f49d446868674b2d944b7a5b2005ed6743f031adcb9b6ba993bfc1a9d",
       hashType: "type",
       args: "0x1234567890abcdef1234567890abcdef12345678",
     });
 
     expect(getScriptedVaultTypeArgs(DEFAULT_NETWORK)).toBe(
-      "0x7ecd173ed7061f9fb68ea2dba0df5d16350f477448ebc2c3a409b624482dfcfe"
+      "0x723b155f49d446868674b2d944b7a5b2005ed6743f031adcb9b6ba993bfc1a9d"
     );
 
     expect(buildScriptedVaultType(DEFAULT_NETWORK)).toEqual({
       codeHash:
-        "0x402a2566a51acbe72fbd043168cb5100e9a1c78f9201f50def5f3f4dd35080a6",
+        "0x79319d084289125a3b8434d70353d44b39b164908d94f5b5f6b186733bbeabd5",
       hashType: "type",
-      args: "0x7ecd173ed7061f9fb68ea2dba0df5d16350f477448ebc2c3a409b624482dfcfe",
+      args: "0x723b155f49d446868674b2d944b7a5b2005ed6743f031adcb9b6ba993bfc1a9d",
     });
   });
 });

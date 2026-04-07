@@ -9,5 +9,6 @@ contracts/tx.json
 contracts/test-output.txt
 
 # Local deployment config files
-contracts/deploy.toml
-contracts/deploy.toml.save
+contracts/deployment.toml
+contracts/deploy-info.json
+contracts/cargo-test-output.txt
