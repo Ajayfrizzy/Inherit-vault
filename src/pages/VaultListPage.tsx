@@ -6,28 +6,51 @@ import { getTipHeader } from "../lib/ckb";
 import { isUnlockConditionSatisfied } from "../lib/ccc";
 import { sendVaultClaimableEmail } from "../lib/email";
 import { DEFAULT_NETWORK } from "../config";
+import {
+  describeUnlock,
+  formatAddress,
+  formatDateTime,
+  formatUnlock,
+} from "../lib/display";
 import type { VaultRecord } from "../types";
 
-function formatUnlock(vault: VaultRecord) {
-  return vault.unlock.type === "blockHeight"
-    ? `Block ${vault.unlock.value.toLocaleString()}`
-    : new Date(vault.unlock.value * 1000).toLocaleString();
-}
+type VaultFilter = "all" | "ready" | "live" | "pending" | "spent";
+type VaultSort = "recent" | "unlock" | "amount";
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleString();
-}
+function getStatusCopy(
+  vault: VaultRecord,
+  currentBlockHeight: number,
+  currentTimestamp: number
+) {
+  const isReady =
+    vault.status === "live" &&
+    isUnlockConditionSatisfied(vault.unlock, currentBlockHeight, currentTimestamp);
 
-function formatBadge(vault: VaultRecord) {
-  return vault.authenticity === "verified"
-    ? {
-        label: "Authenticated Scripted",
-        className: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
-      }
-    : {
-        label: "Legacy Compatibility",
-        className: "border-yellow-500/40 bg-yellow-500/10 text-yellow-100",
-      };
+  if (isReady) {
+    return {
+      label: "Ready to claim",
+      className: "status-banner-success",
+    };
+  }
+
+  if (vault.status === "pending") {
+    return {
+      label: "Pending confirmation",
+      className: "status-banner-warning",
+    };
+  }
+
+  if (vault.status === "spent") {
+    return {
+      label: "Spent",
+      className: "status-banner-danger",
+    };
+  }
+
+  return {
+    label: "Live",
+    className: "status-banner-neutral",
+  };
 }
 
 export default function VaultListPage() {
@@ -35,10 +58,18 @@ export default function VaultListPage() {
   const [importHash, setImportHash] = useState("");
   const [importError, setImportError] = useState("");
   const [importing, setImporting] = useState(false);
+  const [filter, setFilter] = useState<VaultFilter>("all");
+  const [sortBy, setSortBy] = useState<VaultSort>("recent");
+  const [currentBlockHeight, setCurrentBlockHeight] = useState(0);
+  const [currentTimestamp, setCurrentTimestamp] = useState(
+    Math.floor(Date.now() / 1000)
+  );
 
   useEffect(() => {
     const refs = loadVaults();
     setVaults(refs);
+
+    let cancelled = false;
 
     (async () => {
       const updated = [...refs];
@@ -80,20 +111,26 @@ export default function VaultListPage() {
               };
 
               updated[index] = merged;
+              updateVault(merged);
               changed = true;
             }
           } catch {
-            // Keep cached state if the refresh fails.
+            // Keep cached state if refresh fails.
           }
         }
       }
 
-      if (changed) {
+      if (changed && !cancelled) {
         setVaults(updated);
       }
 
       try {
         const tip = await getTipHeader(DEFAULT_NETWORK);
+        if (!cancelled) {
+          setCurrentBlockHeight(tip.blockNumber);
+          setCurrentTimestamp(tip.timestamp);
+        }
+
         for (const vault of updated) {
           if (
             vault.beneficiaryEmail &&
@@ -110,7 +147,7 @@ export default function VaultListPage() {
               index: vault.index,
               network: vault.network,
             }).then((sent) => {
-              if (sent) {
+              if (sent && !cancelled) {
                 const nextVault = { ...vault, claimableEmailSent: true };
                 updateVault(nextVault);
                 setVaults((previous) =>
@@ -128,7 +165,38 @@ export default function VaultListPage() {
         // Claimable email checks are best effort.
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const isReady = (vault: VaultRecord) =>
+    vault.status === "live" &&
+    isUnlockConditionSatisfied(vault.unlock, currentBlockHeight, currentTimestamp);
+
+  const readyCount = vaults.filter(isReady).length;
+  const liveCount = vaults.filter((vault) => vault.status === "live").length;
+  const pendingCount = vaults.filter((vault) => vault.status === "pending").length;
+  const spentCount = vaults.filter((vault) => vault.status === "spent").length;
+
+  const visibleVaults = [...vaults]
+    .filter((vault) => {
+      if (filter === "all") return true;
+      if (filter === "ready") return isReady(vault);
+      return vault.status === filter;
+    })
+    .sort((left, right) => {
+      if (sortBy === "amount") {
+        return parseFloat(right.amountCKB) - parseFloat(left.amountCKB);
+      }
+      if (sortBy === "unlock") {
+        return left.unlock.value - right.unlock.value;
+      }
+      return (
+        new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+      );
+    });
 
   const handleImport = async () => {
     setImportError("");
@@ -146,16 +214,16 @@ export default function VaultListPage() {
 
     setImporting(true);
     try {
-      const result = await fetchVaultFromTransaction("testnet", hash, 0);
+      const result = await fetchVaultFromTransaction(DEFAULT_NETWORK, hash, 0);
       if (!result) {
-        setImportError("No InheritVault-compatible cell was found at index 0.");
+        setImportError("No compatible vault record was found at output index 0.");
         return;
       }
 
       const record: VaultRecord = {
         txHash: hash,
         index: 0,
-        network: "testnet",
+        network: DEFAULT_NETWORK,
         createdAt: result.blockTimestamp
           ? new Date(result.blockTimestamp * 1000).toISOString()
           : new Date().toISOString(),
@@ -181,37 +249,150 @@ export default function VaultListPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6 text-[#d9fff8] md:px-6 md:py-12">
+    <div className="page-shell">
       <div className="mb-6">
-        <Link to="/" className="text-sm text-[#00d4aa] transition-colors hover:text-white md:text-base">
+        <Link to="/" className="inline-link">
           {"<- Back to Home"}
         </Link>
       </div>
 
-      <div className="mb-6 flex flex-col items-start justify-between gap-4 md:mb-8 sm:flex-row sm:items-center">
-        <h1 className="text-2xl font-bold md:text-4xl">My Vaults ({vaults.length})</h1>
-        <Link to="/create">
-          <button className="rounded-lg border border-[#00d4aa] bg-[#00d4aa] px-6 py-3 font-semibold text-black transition-colors hover:bg-[#22e4bd]">
-            Create New Vault
-          </button>
-        </Link>
-      </div>
+      <section className="panel-strong">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="section-eyebrow">Owner dashboard</div>
+            <h1 className="page-title mt-4">Track every saved vault in one place.</h1>
+            <p className="page-subtitle mt-4">
+              Review how much is locked, who it is for, whether the record is
+              still pending or live, and when the unlock window is approaching.
+            </p>
+          </div>
 
-      {vaults.length === 0 && (
-        <div className="rounded-lg border border-gray-700 bg-gray-800 p-8 text-center">
-          <p className="mb-4 opacity-70">
-            No vaults found.{" "}
-            <Link to="/create" className="text-[#00d4aa] hover:underline">
-              Create your first vault
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Link to="/create" className="button-primary">
+              Create New Vault
             </Link>
-          </p>
+            <Link to="/beneficiary" className="button-secondary">
+              Open Beneficiary View
+            </Link>
+          </div>
         </div>
-      )}
 
-      {vaults.length > 0 && (
-        <div className="space-y-4">
-          {vaults.map((vault) => {
-            const badge = formatBadge(vault);
+        <div className="mt-8 grid gap-4 md:grid-cols-4">
+          <div className="metric-card">
+            <div className="text-xs uppercase tracking-[0.22em] text-[#83e8d4]">
+              Saved vaults
+            </div>
+            <div className="mt-3 text-3xl font-semibold text-white">
+              {vaults.length}
+            </div>
+          </div>
+
+          <div className="metric-card">
+            <div className="text-xs uppercase tracking-[0.22em] text-[#83e8d4]">
+              Ready now
+            </div>
+            <div className="mt-3 text-3xl font-semibold text-white">
+              {readyCount}
+            </div>
+          </div>
+
+          <div className="metric-card">
+            <div className="text-xs uppercase tracking-[0.22em] text-[#83e8d4]">
+              Live
+            </div>
+            <div className="mt-3 text-3xl font-semibold text-white">
+              {liveCount}
+            </div>
+          </div>
+
+          <div className="metric-card">
+            <div className="text-xs uppercase tracking-[0.22em] text-[#83e8d4]">
+              Pending / spent
+            </div>
+            <div className="mt-3 text-3xl font-semibold text-white">
+              {pendingCount + spentCount}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-6 panel">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="section-eyebrow">Browse</div>
+            <h2 className="mt-3 text-2xl font-semibold text-white">
+              Filter by what matters right now
+            </h2>
+          </div>
+
+          <div className="flex flex-col gap-3 lg:items-end">
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ["all", "All"],
+                  ["ready", "Ready"],
+                  ["live", "Live"],
+                  ["pending", "Pending"],
+                  ["spent", "Spent"],
+                ] as Array<[VaultFilter, string]>
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`${
+                    filter === value
+                      ? "button-chip button-chip-active"
+                      : "button-chip"
+                  }`}
+                  onClick={() => setFilter(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-[#9dbfb7]" htmlFor="vault-sort">
+                Sort by
+              </label>
+              <select
+                id="vault-sort"
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value as VaultSort)}
+                className="input-base !w-auto !py-2"
+              >
+                <option value="recent">Most recent</option>
+                <option value="unlock">Unlock soonest</option>
+                <option value="amount">Highest amount</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {vaults.length === 0 ? (
+        <section className="mt-6 panel text-center">
+          <h2 className="text-2xl font-semibold text-white">
+            No saved vaults yet
+          </h2>
+          <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-[#9dbfb7]">
+            Once you create or re-import a vault, it will appear here with its
+            status, unlock timing, and beneficiary summary.
+          </p>
+          <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+            <Link to="/create" className="button-primary">
+              Create Your First Vault
+            </Link>
+          </div>
+        </section>
+      ) : (
+        <section className="mt-6 space-y-4">
+          {visibleVaults.map((vault) => {
+            const status = getStatusCopy(
+              vault,
+              currentBlockHeight,
+              currentTimestamp
+            );
 
             return (
               <Link
@@ -219,104 +400,124 @@ export default function VaultListPage() {
                 to={`/vault/${vault.txHash}/${vault.index}`}
                 className="block"
               >
-                <div
-                  className={`rounded-lg border bg-gray-800 p-4 transition-all md:p-6 ${
-                    vault.status === "live"
-                      ? "border-emerald-500/40 hover:border-emerald-400"
-                      : "border-gray-700 hover:border-[#00d4aa]"
-                  }`}
-                >
-                  <div className="mb-4 flex flex-col items-start justify-between gap-4 sm:flex-row">
-                    <div className="flex-1">
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <h3 className="text-xl font-semibold md:text-2xl">
-                          {vault.amountCKB} CKB
-                        </h3>
-                        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${badge.className}`}>
-                          {badge.label}
-                        </span>
-                      </div>
-                      {vault.memo && (
-                        <div className="text-sm opacity-70">{vault.memo}</div>
-                      )}
-                    </div>
+                <article className="panel card-hover">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
-                      {vault.status === "pending" && (
-                        <span className="inline-block whitespace-nowrap text-xs text-yellow-300 md:text-sm">
-                          Pending
-                        </span>
-                      )}
-                      {vault.status === "live" && (
-                        <span className="inline-block whitespace-nowrap text-xs text-emerald-300 md:text-sm">
-                          Live
-                        </span>
-                      )}
-                      {vault.status === "spent" && (
-                        <span className="inline-block whitespace-nowrap text-xs text-red-300 md:text-sm">
-                          Spent
-                        </span>
-                      )}
+                      <div className="section-eyebrow">Vault summary</div>
+                      <h2 className="mt-3 text-3xl font-semibold text-white">
+                        {vault.amountCKB} CKB
+                      </h2>
+                      <p className="mt-3 text-sm leading-7 text-[#d7f6ef]">
+                        {vault.memo || "No note was added to this vault."}
+                      </p>
+                    </div>
+
+                    <div
+                      className={`status-banner !py-2 !text-sm ${status.className}`}
+                    >
+                      {status.label}
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2 md:text-base">
-                    <div>
-                      <div className="mb-1 opacity-70">Beneficiary</div>
-                      <div className="break-all font-mono text-xs md:text-sm">
+                  <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="metric-card">
+                      <div className="text-xs uppercase tracking-[0.22em] text-[#83e8d4]">
+                        Beneficiary
+                      </div>
+                      <div className="mt-3 text-sm font-semibold text-white">
                         {vault.beneficiaryAddress
-                          ? `${vault.beneficiaryAddress.slice(0, 16)}...${vault.beneficiaryAddress.slice(-8)}`
+                          ? formatAddress(vault.beneficiaryAddress, 14, 10)
                           : "Unavailable"}
                       </div>
                     </div>
-                    <div>
-                      <div className="mb-1 opacity-70">Unlock</div>
-                      <div>{formatUnlock(vault)}</div>
+
+                    <div className="metric-card">
+                      <div className="text-xs uppercase tracking-[0.22em] text-[#83e8d4]">
+                        Unlock
+                      </div>
+                      <div className="mt-3 text-sm font-semibold text-white">
+                        {formatUnlock(vault.unlock)}
+                      </div>
+                      <div className="field-hint">
+                        {describeUnlock(
+                          vault.unlock,
+                          currentBlockHeight,
+                          currentTimestamp
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <div className="mb-1 opacity-70">Network</div>
-                      <div className="capitalize">{vault.network}</div>
+
+                    <div className="metric-card">
+                      <div className="text-xs uppercase tracking-[0.22em] text-[#83e8d4]">
+                        Created
+                      </div>
+                      <div className="mt-3 text-sm font-semibold text-white">
+                        {formatDateTime(vault.createdAt)}
+                      </div>
                     </div>
-                    <div>
-                      <div className="mb-1 opacity-70">Created</div>
-                      <div>{formatDate(vault.createdAt)}</div>
+
+                    <div className="metric-card">
+                      <div className="text-xs uppercase tracking-[0.22em] text-[#83e8d4]">
+                        Format
+                      </div>
+                      <div className="mt-3 text-sm font-semibold text-white">
+                        {vault.format === "scripted"
+                          ? "Authenticated scripted"
+                          : "Legacy compatibility"}
+                      </div>
                     </div>
                   </div>
-                </div>
+                </article>
               </Link>
             );
           })}
-        </div>
+        </section>
       )}
 
-      <div className="mt-8 rounded-lg border border-gray-700 bg-gray-800 p-4 md:p-6">
-        <h2 className="mb-2 text-lg font-semibold md:text-xl">Import Vault</h2>
-        <p className="mb-4 text-sm opacity-70">
-          Lost your local vault list? Enter a transaction hash to re-import a
-          vault you created. Scripted vaults will be marked as authenticated;
-          legacy vaults will be preserved in compatibility mode.
-        </p>
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <input
-            type="text"
-            value={importHash}
-            onChange={(e) => setImportHash(e.target.value)}
-            placeholder="0x..."
-            className="flex-1 rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-gray-200 transition-colors focus:border-[#00d4aa] focus:outline-none"
-          />
-          <button
-            onClick={handleImport}
-            disabled={importing}
-            className="whitespace-nowrap rounded-lg bg-[#00d4aa] px-6 py-2 font-semibold text-black transition-colors hover:bg-[#22e4bd] disabled:opacity-50"
-          >
-            {importing ? "Importing..." : "Import"}
-          </button>
-        </div>
-        {importError && (
-          <div className="mt-3 rounded-lg border border-red-500 bg-red-500/10 px-4 py-3 text-sm text-white">
-            {importError}
+      <details className="disclosure mt-6">
+        <summary className="disclosure-summary">
+          <div>
+            <div className="font-semibold text-white">Advanced tools</div>
+            <div className="disclosure-copy">
+              Re-import a vault from its transaction hash if your local list is
+              missing.
+            </div>
           </div>
-        )}
-      </div>
+          <span className="text-sm font-semibold text-[#83e8d4]">Open</span>
+        </summary>
+
+        <div className="border-t border-white/10 px-6 py-6">
+          <div className="max-w-3xl">
+            <label className="field-label">Transaction Hash</label>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                type="text"
+                value={importHash}
+                onChange={(event) => setImportHash(event.target.value)}
+                placeholder="0x..."
+                className="input-base flex-1"
+              />
+              <button
+                onClick={handleImport}
+                disabled={importing}
+                className="button-primary whitespace-nowrap"
+              >
+                {importing ? "Importing..." : "Import Vault"}
+              </button>
+            </div>
+            <div className="field-hint">
+              This checks output index 0 first and restores the vault into your
+              local list when it finds a matching record.
+            </div>
+
+            {importError && (
+              <div className="status-banner status-banner-danger mt-4">
+                {importError}
+              </div>
+            )}
+          </div>
+        </div>
+      </details>
     </div>
   );
 }
