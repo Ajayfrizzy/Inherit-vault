@@ -27,13 +27,18 @@ export default function CopyButton({
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      disabled={!value}
-      className={`inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-[#83e8d4] transition-colors hover:border-[#00d4aa]/35 hover:bg-[#00d4aa]/10 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
-    >
-      {copied ? "Copied" : label}
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={handleCopy}
+        disabled={!value}
+        className={`inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-[#83e8d4] transition-colors hover:border-[#00d4aa]/35 hover:bg-[#00d4aa]/10 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+      >
+        {copied ? "Copied" : label}
+      </button>
+      <span className="sr-only" aria-live="polite">
+        {copied ? `${label} copied to clipboard` : ""}
+      </span>
+    </>
   );
 }

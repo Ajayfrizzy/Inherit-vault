@@ -39,7 +39,7 @@ function formatBadge(vault: VaultRecord) {
 export default function VaultDetailPage() {
   const { txHash, index: indexParam } = useParams<{ txHash: string; index: string }>();
   const navigate = useNavigate();
-  const { wallet } = ccc.useCcc();
+  const { wallet, open, disconnect } = ccc.useCcc();
   const signer = ccc.useSigner();
 
   const vaultIndex = parseInt(indexParam || "0", 10);
@@ -330,6 +330,12 @@ export default function VaultDetailPage() {
           body: "This vault has already been claimed or otherwise spent on-chain.",
           tone: "status-banner-danger",
         }
+      : vault.status === "pending"
+        ? {
+            title: "Awaiting confirmation",
+            body: "This vault has been submitted, but the claim panel will stay unavailable until the chain confirms it as live.",
+            tone: "status-banner-warning",
+          }
       : canClaim
         ? {
             title: "Ready to claim",
@@ -627,6 +633,23 @@ export default function VaultDetailPage() {
             </div>
 
             <div className="mt-6 flex flex-col gap-3">
+              {!wallet && vault.status === "live" && (
+                <button className="button-primary" onClick={open}>
+                  Connect Beneficiary Wallet
+                </button>
+              )}
+
+              {wallet && !beneficiaryMatches && vault.status === "live" && (
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <button className="button-secondary" onClick={open}>
+                    Switch Wallet
+                  </button>
+                  <button className="button-ghost" onClick={() => disconnect()}>
+                    Disconnect Current Wallet
+                  </button>
+                </div>
+              )}
+
               {canClaim && vault.status === "live" && (
                 <button
                   className="button-primary"
@@ -638,13 +661,11 @@ export default function VaultDetailPage() {
                 </button>
               )}
 
-              {!canClaim && vault.status === "live" && (
+              {!canClaim && wallet && vault.status === "live" && (
                 <button className="button-secondary" disabled>
-                  {!wallet
-                    ? "Connect Wallet to Claim"
-                    : !isUnlocked
-                      ? "Vault Is Still Locked"
-                      : "Beneficiary Wallet Required"}
+                  {!isUnlocked
+                    ? "Vault Is Still Locked"
+                    : "Beneficiary Wallet Required"}
                 </button>
               )}
 
@@ -698,7 +719,7 @@ export default function VaultDetailPage() {
           <details className="disclosure">
             <summary className="disclosure-summary">
               <div>
-                <div className="font-semibold text-white">Advanced record tools</div>
+                <div className="font-semibold text-white">Local record tools</div>
                 <div className="disclosure-copy">
                   Remove this vault from your local list without changing the
                   on-chain record.
@@ -712,16 +733,17 @@ export default function VaultDetailPage() {
                 className="button-ghost"
                 onClick={() => setConfirmDelete((value) => !value)}
               >
-                {confirmDelete ? "Cancel" : "Delete local record"}
+                {confirmDelete ? "Cancel" : "Remove from this browser"}
               </button>
 
               {confirmDelete && (
                 <div className="status-banner status-banner-warning mt-4">
                   This only removes the saved reference from this browser. The
-                  on-chain vault will remain unchanged.
+                  on-chain vault will remain unchanged and can still be restored
+                  later from its transaction details.
                   <div className="mt-4">
                     <button className="button-danger" onClick={handleDelete}>
-                      Delete Local Record
+                      Remove From This Browser
                     </button>
                   </div>
                 </div>

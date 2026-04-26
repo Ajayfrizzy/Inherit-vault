@@ -64,10 +64,14 @@ export default function VaultListPage() {
   const [currentTimestamp, setCurrentTimestamp] = useState(
     Math.floor(Date.now() / 1000)
   );
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState("");
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   useEffect(() => {
     const refs = loadVaults();
     setVaults(refs);
+    setRefreshing(true);
 
     let cancelled = false;
 
@@ -123,6 +127,9 @@ export default function VaultListPage() {
       if (changed && !cancelled) {
         setVaults(updated);
       }
+      if (!cancelled) {
+        setLastSyncedAt(new Date().toISOString());
+      }
 
       try {
         const tip = await getTipHeader(DEFAULT_NETWORK);
@@ -163,20 +170,26 @@ export default function VaultListPage() {
         }
       } catch {
         // Claimable email checks are best effort.
+      } finally {
+        if (!cancelled) {
+          setRefreshing(false);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshNonce]);
 
   const isReady = (vault: VaultRecord) =>
     vault.status === "live" &&
     isUnlockConditionSatisfied(vault.unlock, currentBlockHeight, currentTimestamp);
 
   const readyCount = vaults.filter(isReady).length;
-  const liveCount = vaults.filter((vault) => vault.status === "live").length;
+  const lockedLiveCount = vaults.filter(
+    (vault) => vault.status === "live" && !isReady(vault)
+  ).length;
   const pendingCount = vaults.filter((vault) => vault.status === "pending").length;
   const spentCount = vaults.filter((vault) => vault.status === "spent").length;
 
@@ -274,10 +287,24 @@ export default function VaultListPage() {
             <Link to="/beneficiary" className="button-secondary">
               Open Beneficiary View
             </Link>
+            <button
+              type="button"
+              className="button-ghost"
+              onClick={() => setRefreshNonce((value) => value + 1)}
+              disabled={refreshing}
+            >
+              {refreshing ? "Refreshing..." : "Refresh Status"}
+            </button>
           </div>
         </div>
 
-        <div className="mt-8 grid gap-4 md:grid-cols-4">
+        {lastSyncedAt && (
+          <div className="mt-6 text-sm text-[#9dbfb7]">
+            Last checked {formatDateTime(lastSyncedAt)}
+          </div>
+        )}
+
+        <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <div className="metric-card">
             <div className="text-xs uppercase tracking-[0.22em] text-[#83e8d4]">
               Saved vaults
@@ -298,19 +325,28 @@ export default function VaultListPage() {
 
           <div className="metric-card">
             <div className="text-xs uppercase tracking-[0.22em] text-[#83e8d4]">
-              Live
+              Live and locked
             </div>
             <div className="mt-3 text-3xl font-semibold text-white">
-              {liveCount}
+              {lockedLiveCount}
             </div>
           </div>
 
           <div className="metric-card">
             <div className="text-xs uppercase tracking-[0.22em] text-[#83e8d4]">
-              Pending / spent
+              Pending
             </div>
             <div className="mt-3 text-3xl font-semibold text-white">
-              {pendingCount + spentCount}
+              {pendingCount}
+            </div>
+          </div>
+
+          <div className="metric-card">
+            <div className="text-xs uppercase tracking-[0.22em] text-[#83e8d4]">
+              Spent
+            </div>
+            <div className="mt-3 text-3xl font-semibold text-white">
+              {spentCount}
             </div>
           </div>
         </div>
@@ -384,6 +420,16 @@ export default function VaultListPage() {
               Create Your First Vault
             </Link>
           </div>
+        </section>
+      ) : visibleVaults.length === 0 ? (
+        <section className="mt-6 panel text-center">
+          <h2 className="text-2xl font-semibold text-white">
+            No vaults match the current view
+          </h2>
+          <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-[#9dbfb7]">
+            Try a different filter or sort order to bring the rest of your saved
+            vaults back into view.
+          </p>
         </section>
       ) : (
         <section className="mt-6 space-y-4">
@@ -477,10 +523,10 @@ export default function VaultListPage() {
       <details className="disclosure mt-6">
         <summary className="disclosure-summary">
           <div>
-            <div className="font-semibold text-white">Advanced tools</div>
+            <div className="font-semibold text-white">Recovery tools</div>
             <div className="disclosure-copy">
               Re-import a vault from its transaction hash if your local list is
-              missing.
+              missing from this browser.
             </div>
           </div>
           <span className="text-sm font-semibold text-[#83e8d4]">Open</span>

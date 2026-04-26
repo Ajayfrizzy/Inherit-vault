@@ -16,10 +16,21 @@ export function formatDateTime(value: string | number): string {
   return date.toLocaleString();
 }
 
+export function formatDateTimeWithZone(value: string | number): string {
+  const date =
+    typeof value === "number" ? new Date(value * 1000) : new Date(value);
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZoneName: "short",
+  }).format(date);
+}
+
 export function formatUnlock(unlock: UnlockCondition): string {
   return unlock.type === "blockHeight"
     ? `Block ${unlock.value.toLocaleString()}`
-    : new Date(unlock.value * 1000).toLocaleString();
+    : formatDateTimeWithZone(unlock.value);
 }
 
 function formatDuration(totalSeconds: number): string {
@@ -40,6 +51,18 @@ function formatDuration(totalSeconds: number): string {
   }
 
   return "1 second";
+}
+
+export function formatRelativeTimeFromNow(timestampSeconds: number): string {
+  const secondsRemaining = timestampSeconds - Math.floor(Date.now() / 1000);
+
+  if (secondsRemaining === 0) {
+    return "now";
+  }
+
+  return secondsRemaining < 0
+    ? `${formatDuration(secondsRemaining)} ago`
+    : `in ${formatDuration(secondsRemaining)}`;
 }
 
 export function describeUnlock(

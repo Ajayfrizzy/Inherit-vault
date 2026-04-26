@@ -21,7 +21,13 @@ import {
   sendVaultCreatedEmail,
   isEmailConfigured,
 } from "../lib/email";
-import { describeUnlock, formatAddress, formatUnlock } from "../lib/display";
+import {
+  describeUnlock,
+  formatAddress,
+  formatDateTimeWithZone,
+  formatRelativeTimeFromNow,
+  formatUnlock,
+} from "../lib/display";
 import type { UnlockCondition, UnlockType } from "../types";
 
 function padDateTimePart(value: number): string {
@@ -62,6 +68,10 @@ export default function CreateVaultPage() {
   } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [currentBlockHeight, setCurrentBlockHeight] = useState(0);
+  const [currentChainTimestamp, setCurrentChainTimestamp] = useState(0);
+  const [timingLoading, setTimingLoading] = useState(false);
+  const [lastTimingSync, setLastTimingSync] = useState("");
 
   useEffect(() => {
     setOwnerDisplayName(getOwnerName());
@@ -85,6 +95,25 @@ export default function CreateVaultPage() {
       }
     })();
   }, [signer]);
+
+  const refreshTimingReference = async () => {
+    setTimingLoading(true);
+    try {
+      const tip = await getTipHeader(DEFAULT_NETWORK);
+      setCurrentBlockHeight(tip.blockNumber);
+      setCurrentChainTimestamp(tip.timestamp);
+      setLastTimingSync(new Date().toISOString());
+    } catch {
+      // Keep existing values when the chain reference cannot be refreshed.
+    } finally {
+      setTimingLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!wallet) return;
+    refreshTimingReference();
+  }, [wallet]);
 
   const dynamicMinCKB = useMemo(() => {
     if (!ownerLock) return MIN_VAULT_CKB;
@@ -110,8 +139,65 @@ export default function CreateVaultPage() {
     ? formatUnlock(selectedUnlock)
     : "Choose when the vault should become claimable.";
   const unlockContext = selectedUnlock
-    ? describeUnlock(selectedUnlock)
+    ? describeUnlock(selectedUnlock, currentBlockHeight, currentChainTimestamp)
     : "The beneficiary will only be able to claim after this moment.";
+  const trimmedBeneficiaryAddress = beneficiaryAddress.trim();
+  const parsedAmount = parseFloat(amountCKB);
+  const parsedUnlockValue = parseInt(unlockValue, 10);
+  const amountReady =
+    !!amountCKB &&
+    !Number.isNaN(parsedAmount) &&
+    parsedAmount >= dynamicMinCKB;
+  const amountShortfall =
+    !Number.isNaN(parsedAmount) && parsedAmount < dynamicMinCKB
+      ? dynamicMinCKB - parsedAmount
+      : dynamicMinCKB;
+  const minRecommendedTimestamp =
+    Math.max(Math.floor(Date.now() / 1000), currentChainTimestamp) +
+    MIN_TIMESTAMP_UNLOCK_LEAD_SECONDS;
+  const unlockReady = unlockType === "blockHeight"
+    ? !!unlockValue.trim() &&
+      !Number.isNaN(parsedUnlockValue) &&
+      parsedUnlockValue > Math.max(currentBlockHeight, 0)
+    : !!unlockValue.trim() &&
+      !Number.isNaN(parsedUnlockValue) &&
+      parsedUnlockValue >= minRecommendedTimestamp;
+  const readinessChecks = [
+    {
+      label: "Beneficiary added",
+      met: !!trimmedBeneficiaryAddress,
+      detail: trimmedBeneficiaryAddress
+        ? formatAddress(trimmedBeneficiaryAddress, 14, 10)
+        : "Add the beneficiary address to keep going.",
+    },
+    {
+      label: "Amount covers the current minimum",
+      met: amountReady,
+      detail: amountReady
+        ? `${amountCKB} CKB selected`
+        : `Add at least ${amountShortfall.toLocaleString(undefined, {
+            maximumFractionDigits: 2,
+          })} more CKB.`,
+    },
+    {
+      label: "Unlock timing looks claim-safe",
+      met: unlockReady,
+      detail: selectedUnlock
+        ? unlockType === "blockHeight"
+          ? `Target block ${parsedUnlockValue.toLocaleString()}`
+          : `${formatDateTimeWithZone(parsedUnlockValue)} (${formatRelativeTimeFromNow(
+              parsedUnlockValue
+            )})`
+        : "Choose a future block height or date.",
+    },
+    {
+      label: "Connected wallet is ready",
+      met: !!ownerAddress,
+      detail: ownerAddress
+        ? formatAddress(ownerAddress, 14, 10)
+        : "Waiting for the connected wallet address.",
+    },
+  ];
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -324,8 +410,13 @@ export default function CreateVaultPage() {
       <div className="mb-8">
         <div className="section-eyebrow">Create a vault</div>
         <h1 className="page-title mt-4">Set up the handoff in four decisions.</h1>
-        <p className="page-subtitle mt-4">
+        <p className="hidden page-subtitle mt-4">
           We’ll walk through who should receive the vault, how much you want to
+          lock, when it opens, and what optional note or notification details to
+          include.
+        </p>
+        <p className="page-subtitle mt-4">
+          We'll walk through who should receive the vault, how much you want to
           lock, when it opens, and what optional note or notification details to
           include.
         </p>
@@ -387,6 +478,18 @@ export default function CreateVaultPage() {
                 </div>
               </div>
             </div>
+
+            <div
+              className={`status-banner mt-6 ${
+                trimmedBeneficiaryAddress
+                  ? "status-banner-success"
+                  : "status-banner-neutral"
+              }`}
+            >
+              {trimmedBeneficiaryAddress
+                ? "Recipient details are in place. You can still update the address or leave email blank."
+                : "Start with the beneficiary address so the live summary can reflect the final recipient."}
+            </div>
           </section>
 
           <section className="panel">
@@ -415,7 +518,9 @@ export default function CreateVaultPage() {
                   className="input-base"
                 />
                 <div className="field-hint">
-                  Add enough CKB to cover the vault plus transaction fees.
+                  {amountReady
+                    ? "Amount covers the current vault minimum. Keep a little extra in the wallet for fees."
+                    : `Enter at least ${minCapacityLabel} CKB before fees.`}
                 </div>
               </div>
 
@@ -431,6 +536,16 @@ export default function CreateVaultPage() {
                 </div>
               </div>
             </div>
+
+            <div
+              className={`status-banner mt-6 ${
+                amountReady ? "status-banner-success" : "status-banner-neutral"
+              }`}
+            >
+              {amountReady
+                ? "The selected amount is large enough for the current vault payload."
+                : "The minimum can move a little as you change the note, unlock settings, or saved display name."}
+            </div>
           </section>
 
           <section className="panel">
@@ -443,6 +558,46 @@ export default function CreateVaultPage() {
               time works well for planning, while a block height works well if
               you already monitor the chain.
             </p>
+
+            <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="metric-card">
+                  <div className="text-xs uppercase tracking-[0.22em] text-[#83e8d4]">
+                    Latest observed block
+                  </div>
+                  <div className="mt-3 text-lg font-semibold text-white">
+                    {currentBlockHeight > 0
+                      ? currentBlockHeight.toLocaleString()
+                      : "Waiting..."}
+                  </div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="text-xs uppercase tracking-[0.22em] text-[#83e8d4]">
+                    Latest observed chain time
+                  </div>
+                  <div className="mt-3 text-lg font-semibold text-white">
+                    {currentChainTimestamp > 0
+                      ? formatDateTimeWithZone(currentChainTimestamp)
+                      : "Waiting..."}
+                  </div>
+                  {lastTimingSync && (
+                    <div className="field-hint">
+                      Checked {formatDateTimeWithZone(lastTimingSync)}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="button-ghost self-start"
+                onClick={refreshTimingReference}
+                disabled={timingLoading}
+              >
+                {timingLoading ? "Refreshing..." : "Refresh timing"}
+              </button>
+            </div>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
               <button
@@ -506,10 +661,7 @@ export default function CreateVaultPage() {
                       setUnlockValue("");
                     }
                   }}
-                  min={toLocalDateTimeInputValue(
-                    Math.floor(Date.now() / 1000) +
-                      MIN_TIMESTAMP_UNLOCK_LEAD_SECONDS
-                  )}
+                  min={toLocalDateTimeInputValue(minRecommendedTimestamp)}
                   required
                   className="input-base"
                 />
@@ -517,12 +669,40 @@ export default function CreateVaultPage() {
 
               <div className="field-hint">
                 {unlockType === "blockHeight"
-                  ? "Compare your chosen block height with the latest explorer height before submitting."
+                  ? currentBlockHeight > 0
+                    ? `Choose a block higher than ${currentBlockHeight.toLocaleString()} so the vault has time to confirm first.`
+                    : "Compare your chosen block height with the latest explorer height before submitting."
                   : selectedUnlock
-                    ? `Selected date: ${formatUnlock(selectedUnlock)}`
+                    ? `Selected date: ${formatUnlock(selectedUnlock)} (${formatRelativeTimeFromNow(
+                        selectedUnlock.value
+                      )})`
                     : "Choose a time comfortably in the future so the vault has time to confirm first."}
               </div>
             </div>
+
+            <div
+              className={`status-banner mt-6 ${
+                unlockReady ? "status-banner-success" : "status-banner-warning"
+              }`}
+            >
+              {unlockType === "blockHeight"
+                ? unlockReady
+                  ? "Unlock block is ahead of the latest observed chain height."
+                  : "Set a future block height so the vault does not become claimable too early."
+                : unlockReady
+                  ? "Timestamp is far enough ahead of the latest observed chain time. A final chain-time buffer can still apply at claim time."
+                  : `Choose a timestamp at least ${
+                      MIN_TIMESTAMP_UNLOCK_LEAD_SECONDS / 60
+                    } minutes after the latest observed chain time.`}
+            </div>
+
+            {unlockType === "timestamp" && (
+              <div className="status-banner status-banner-warning mt-4">
+                Timestamp-based claims can still require about{" "}
+                {MIN_TIMESTAMP_UNLOCK_LEAD_SECONDS / 60} minutes of confirmation
+                runway before the vault is safely live.
+              </div>
+            )}
           </section>
 
           <section className="panel">
@@ -606,6 +786,24 @@ export default function CreateVaultPage() {
             <h2 className="mt-4 text-2xl font-semibold text-white">
               Review the plan before you sign
             </h2>
+
+            <div className="mt-6 space-y-3">
+              {readinessChecks.map((check) => (
+                <div key={check.label} className="metric-card">
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={`mt-1 inline-block h-2.5 w-2.5 rounded-full ${
+                        check.met ? "bg-emerald-400" : "bg-yellow-300"
+                      }`}
+                    />
+                    <div>
+                      <div className="font-semibold text-white">{check.label}</div>
+                      <div className="field-hint">{check.detail}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
 
             <div className="mt-6 space-y-4">
               <div className="metric-card">
