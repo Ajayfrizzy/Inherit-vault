@@ -21,8 +21,11 @@ export function formatDateTimeWithZone(value: string | number): string {
     typeof value === "number" ? new Date(value * 1000) : new Date(value);
 
   return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
     timeZoneName: "short",
   }).format(date);
 }
