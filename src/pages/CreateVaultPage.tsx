@@ -9,10 +9,8 @@ import {
   signAndSendTransaction,
 } from "../lib/ccc";
 import {
-  DEFAULT_NETWORK,
   MIN_TIMESTAMP_UNLOCK_LEAD_SECONDS,
   MIN_VAULT_CKB,
-  NETWORK_CONFIGS,
   isVaultScriptsReady,
 } from "../config";
 import { getTipHeader } from "../lib/ckb";
@@ -28,6 +26,11 @@ import {
   formatRelativeTimeFromNow,
   formatUnlock,
 } from "../lib/display";
+import {
+  buildVaultDetailPath,
+  getActiveNetwork,
+  getNetworkLabel,
+} from "../lib/network";
 import type { UnlockCondition, UnlockType } from "../types";
 
 function padDateTimePart(value: number): string {
@@ -47,10 +50,11 @@ function toLocalDateTimeInputValue(timestampSeconds: number): string {
 
 export default function CreateVaultPage() {
   const navigate = useNavigate();
-  const { wallet, open } = ccc.useCcc();
+  const { wallet, open, client } = ccc.useCcc();
   const signer = ccc.useSigner();
-  const scriptsReady = isVaultScriptsReady(DEFAULT_NETWORK);
-  const networkLabel = NETWORK_CONFIGS[DEFAULT_NETWORK].label;
+  const activeNetwork = getActiveNetwork(signer?.client ?? client);
+  const scriptsReady = isVaultScriptsReady(activeNetwork);
+  const networkLabel = getNetworkLabel(activeNetwork);
   const emailEnabled = isEmailConfigured();
 
   const [beneficiaryAddress, setBeneficiaryAddress] = useState("");
@@ -99,7 +103,7 @@ export default function CreateVaultPage() {
   const refreshTimingReference = async () => {
     setTimingLoading(true);
     try {
-      const tip = await getTipHeader(DEFAULT_NETWORK);
+      const tip = await getTipHeader(activeNetwork);
       setCurrentBlockHeight(tip.blockNumber);
       setCurrentChainTimestamp(tip.timestamp);
       setLastTimingSync(new Date().toISOString());
@@ -113,7 +117,7 @@ export default function CreateVaultPage() {
   useEffect(() => {
     if (!wallet) return;
     refreshTimingReference();
-  }, [wallet]);
+  }, [wallet, activeNetwork]);
 
   const dynamicMinCKB = useMemo(() => {
     if (!ownerLock) return MIN_VAULT_CKB;
@@ -262,7 +266,7 @@ export default function CreateVaultPage() {
       }
     } else {
       const now = Math.floor(Date.now() / 1000);
-      const tip = await getTipHeader(DEFAULT_NETWORK).catch(() => null);
+      const tip = await getTipHeader(activeNetwork).catch(() => null);
       const minUnlock =
         Math.max(now, tip?.timestamp ?? 0) + MIN_TIMESTAMP_UNLOCK_LEAD_SECONDS;
 
@@ -311,7 +315,7 @@ export default function CreateVaultPage() {
       const vaultRecord = {
         txHash,
         index: buildResult.outPointIndex,
-        network: DEFAULT_NETWORK,
+        network: activeNetwork,
         createdAt: new Date().toISOString(),
         beneficiaryAddress: beneficiaryAddress.trim(),
         amountCKB,
@@ -336,13 +340,13 @@ export default function CreateVaultPage() {
           memo: memo || undefined,
           txHash,
           index: buildResult.outPointIndex,
-          network: DEFAULT_NETWORK,
+          network: activeNetwork,
         }).catch(() => {
           // Email delivery is best effort.
         });
       }
 
-      navigate(`/vault/${txHash}/${buildResult.outPointIndex}`);
+      navigate(buildVaultDetailPath(txHash, buildResult.outPointIndex, activeNetwork));
     } catch (err: any) {
       console.error("Failed to create vault:", err);
 

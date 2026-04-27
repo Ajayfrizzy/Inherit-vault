@@ -8,6 +8,8 @@ import type { Network } from "./config";
 // Unlock condition stored with a vault record
 // ---------------------------------------------------------------------------
 export type UnlockType = "blockHeight" | "timestamp";
+export type VaultRecordStatus = "pending" | "live" | "spent" | "unknown";
+export type LiveCellStatus = "live" | "spent" | "unknown";
 
 export interface UnlockCondition {
   type: UnlockType;
@@ -81,8 +83,9 @@ export interface VaultRecord {
    * "pending" - tx not yet confirmed
    * "live" - cell is unspent
    * "spent" - cell has been spent (claimed or otherwise)
+   * "unknown" - chain status could not be confirmed
    */
-  status?: "pending" | "live" | "spent";
+  status?: VaultRecordStatus;
 }
 
 // ---------------------------------------------------------------------------

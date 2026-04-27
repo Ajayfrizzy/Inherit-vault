@@ -2,11 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ccc } from "@ckb-ccc/connector-react";
 import CopyButton from "../components/CopyButton";
-import {
-  DEFAULT_NETWORK,
-  NETWORK_CONFIGS,
-  isVaultScriptsReady,
-} from "../config";
+import { isVaultScriptsReady } from "../config";
 import { getTipHeader } from "../lib/ckb";
 import { getScriptedVaultLockForIndexer, isUnlockConditionSatisfied } from "../lib/ccc";
 import { getHiddenVaults, hideVault, unhideVault } from "../lib/storage";
@@ -22,21 +18,25 @@ import {
   formatDateTime,
   formatUnlock,
 } from "../lib/display";
+import {
+  buildVaultDetailPath,
+  getActiveNetwork,
+  getExplorerTransactionUrl,
+  getNetworkLabel,
+} from "../lib/network";
 
 type BeneficiaryFilter = "all" | "ready" | "locked";
-
-function explorerTxUrl(txHash: string) {
-  return `${NETWORK_CONFIGS[DEFAULT_NETWORK].explorerTxUrl}${txHash}`;
-}
 
 function vaultKey(vault: OnChainVault) {
   return `${vault.outPoint.txHash}:${vault.outPoint.index}`;
 }
 
 export default function BeneficiaryPage() {
-  const { wallet, open } = ccc.useCcc();
+  const { wallet, open, client } = ccc.useCcc();
   const signer = ccc.useSigner();
-  const scriptsReady = isVaultScriptsReady(DEFAULT_NETWORK);
+  const activeNetwork = getActiveNetwork(signer?.client ?? client);
+  const scriptsReady = isVaultScriptsReady(activeNetwork);
+  const networkLabel = getNetworkLabel(activeNetwork);
 
   const [vaults, setVaults] = useState<OnChainVault[]>([]);
   const [loading, setLoading] = useState(false);
@@ -69,7 +69,7 @@ export default function BeneficiaryPage() {
       try {
         const [nextAddress, tip] = await Promise.all([
           signer.getRecommendedAddress(),
-          getTipHeader(DEFAULT_NETWORK),
+          getTipHeader(activeNetwork),
         ]);
 
         if (cancelled) return;
@@ -81,10 +81,10 @@ export default function BeneficiaryPage() {
         const scriptedLock = await getScriptedVaultLockForIndexer(
           nextAddress,
           signer,
-          DEFAULT_NETWORK
+          activeNetwork
         );
 
-        const results = await fetchVaultsForLockScript(DEFAULT_NETWORK, scriptedLock);
+        const results = await fetchVaultsForLockScript(activeNetwork, scriptedLock);
         if (!cancelled) {
           setVaults(results);
           setLastSyncedAt(new Date().toISOString());
@@ -104,7 +104,7 @@ export default function BeneficiaryPage() {
     return () => {
       cancelled = true;
     };
-  }, [signer, scriptsReady, refreshNonce]);
+  }, [signer, scriptsReady, refreshNonce, activeNetwork]);
 
   const handleVerify = async () => {
     setVerifyError("");
@@ -119,7 +119,7 @@ export default function BeneficiaryPage() {
     setVerifying(true);
     try {
       const result = await verifyVault(
-        DEFAULT_NETWORK,
+        activeNetwork,
         hash,
         parseInt(verifyIndex || "0", 10)
       );
@@ -290,14 +290,14 @@ export default function BeneficiaryPage() {
                   Memo
                 </div>
                 <div className="mt-3 text-sm leading-7 text-[#d7f6ef]">
-                  {verifyResult.data.memo}
+                {verifyResult.data.memo}
                 </div>
               </div>
             )}
 
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <a
-                href={explorerTxUrl(verifyResult.outPoint.txHash)}
+                href={getExplorerTransactionUrl(activeNetwork, verifyResult.outPoint.txHash)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="button-secondary"
@@ -305,7 +305,11 @@ export default function BeneficiaryPage() {
                 View on Explorer
               </a>
               <Link
-                to={`/vault/${verifyResult.outPoint.txHash}/${verifyResult.outPoint.index}`}
+                to={buildVaultDetailPath(
+                  verifyResult.outPoint.txHash,
+                  verifyResult.outPoint.index,
+                  activeNetwork
+                )}
                 className="button-secondary"
               >
                 Open Detail View
@@ -371,6 +375,7 @@ export default function BeneficiaryPage() {
               how much is there, and whether it is still locked or ready to
               claim.
             </p>
+            <p className="field-hint mt-4">Scanning {networkLabel}.</p>
           </div>
 
           <div className="panel-muted !p-5">
@@ -543,7 +548,11 @@ export default function BeneficiaryPage() {
                 return (
                   <Link
                     key={`${vault.outPoint.txHash}-${vault.outPoint.index}`}
-                    to={`/vault/${vault.outPoint.txHash}/${vault.outPoint.index}`}
+                    to={buildVaultDetailPath(
+                      vault.outPoint.txHash,
+                      vault.outPoint.index,
+                      activeNetwork
+                    )}
                     className="block"
                   >
                     <article

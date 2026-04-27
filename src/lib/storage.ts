@@ -2,7 +2,12 @@
 // InheritVault - localStorage persistence
 // -----------------------------------------------------------------------------
 
-import type { VaultAuthenticity, VaultFormat, VaultRecord } from "../types";
+import type {
+  VaultAuthenticity,
+  VaultFormat,
+  VaultRecord,
+  VaultRecordStatus,
+} from "../types";
 
 const STORAGE_KEY = "inherit_vault_refs_v2";
 const OWNER_NAME_KEY = "inherit_vault_owner_name";
@@ -15,6 +20,13 @@ function normalizeVaultRecord(record: Partial<VaultRecord>): VaultRecord {
     record.authenticity === "verified" || format === "scripted"
       ? "verified"
       : "legacy";
+  const status: VaultRecordStatus | undefined =
+    record.status === "pending" ||
+    record.status === "live" ||
+    record.status === "spent" ||
+    record.status === "unknown"
+      ? record.status
+      : undefined;
 
   return {
     txHash: record.txHash ?? "",
@@ -31,7 +43,7 @@ function normalizeVaultRecord(record: Partial<VaultRecord>): VaultRecord {
     ownerName: record.ownerName,
     format,
     authenticity,
-    status: record.status,
+    status,
   };
 }
 

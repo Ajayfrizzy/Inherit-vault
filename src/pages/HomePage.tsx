@@ -2,14 +2,16 @@ import { Link } from "react-router-dom";
 import { ccc } from "@ckb-ccc/connector-react";
 import { useEffect, useState } from "react";
 import CopyButton from "../components/CopyButton";
-import { DEFAULT_NETWORK, NETWORK_CONFIGS, isVaultScriptsReady } from "../config";
+import { isVaultScriptsReady } from "../config";
 import { formatAddress } from "../lib/display";
+import { getActiveNetwork, getNetworkLabel } from "../lib/network";
 
 export default function HomePage() {
-  const { wallet, open } = ccc.useCcc();
+  const { wallet, open, client } = ccc.useCcc();
   const signer = ccc.useSigner();
   const [address, setAddress] = useState("");
   const [balance, setBalance] = useState("");
+  const activeNetwork = getActiveNetwork(signer?.client ?? client);
 
   useEffect(() => {
     if (!signer) return;
@@ -27,8 +29,8 @@ export default function HomePage() {
     })();
   }, [signer]);
 
-  const scriptsReady = isVaultScriptsReady(DEFAULT_NETWORK);
-  const networkLabel = NETWORK_CONFIGS[DEFAULT_NETWORK].label;
+  const scriptsReady = isVaultScriptsReady(activeNetwork);
+  const networkLabel = getNetworkLabel(activeNetwork);
   const quickNotes = [
     "Choose who should receive the vault.",
     "Set the amount and the unlock moment.",

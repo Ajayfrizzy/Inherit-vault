@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ccc } from "@ckb-ccc/connector-react";
 import CopyButton from "../components/CopyButton";
 import { getVaultByOutPoint, updateVault, deleteVault } from "../lib/storage";
@@ -9,12 +9,12 @@ import {
   signAndSendTransaction,
   isUnlockConditionSatisfied,
 } from "../lib/ccc";
-import { fetchVaultFromTransaction, type VaultFromTx } from "../lib/vaultIndexer";
 import {
-  NETWORK_CONFIGS,
-  DEFAULT_NETWORK,
-  TIMESTAMP_CLAIM_BUFFER_SECONDS,
-} from "../config";
+  fetchVaultFromTransaction,
+  getVaultRecordStatus,
+  type VaultFromTx,
+} from "../lib/vaultIndexer";
+import { TIMESTAMP_CLAIM_BUFFER_SECONDS } from "../config";
 import { sendVaultClaimableEmail } from "../lib/email";
 import {
   describeUnlock,
@@ -23,6 +23,11 @@ import {
   formatUnlock,
 } from "../lib/display";
 import type { VaultRecord, UnlockCondition } from "../types";
+import {
+  getActiveNetwork,
+  getExplorerTransactionUrl,
+  parseNetwork,
+} from "../lib/network";
 
 function formatBadge(vault: VaultRecord) {
   return vault.authenticity === "verified"
@@ -38,12 +43,17 @@ function formatBadge(vault: VaultRecord) {
 
 export default function VaultDetailPage() {
   const { txHash, index: indexParam } = useParams<{ txHash: string; index: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { wallet, open, disconnect } = ccc.useCcc();
+  const { wallet, open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
 
   const vaultIndex = parseInt(indexParam || "0", 10);
-  const network = DEFAULT_NETWORK;
+  const cachedVault = txHash ? getVaultByOutPoint(txHash, vaultIndex) : undefined;
+  const network =
+    parseNetwork(searchParams.get("network")) ??
+    cachedVault?.network ??
+    getActiveNetwork(signer?.client ?? client);
 
   const [vault, setVault] = useState<VaultRecord | null>(null);
   const [onChainData, setOnChainData] = useState<VaultFromTx | null>(null);
@@ -51,6 +61,8 @@ export default function VaultDetailPage() {
   const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState("");
   const [successTxHash, setSuccessTxHash] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [currentBlockHeight, setCurrentBlockHeight] = useState(0);
   const [currentTimestamp, setCurrentTimestamp] = useState(0);
@@ -64,6 +76,9 @@ export default function VaultDetailPage() {
     let cancelled = false;
 
     (async () => {
+      if (!cancelled) {
+        setRefreshing(true);
+      }
       try {
         const cached = getVaultByOutPoint(txHash, vaultIndex);
         if (cached && !cancelled) setVault(cached);
@@ -71,13 +86,11 @@ export default function VaultDetailPage() {
         const chainResult = await fetchVaultFromTransaction(network, txHash, vaultIndex);
 
         if (chainResult) {
-          const newStatus: VaultRecord["status"] = chainResult.isLive
-            ? "live"
-            : chainResult.txStatus === "committed"
-              ? "spent"
-              : chainResult.txStatus === "pending" || chainResult.txStatus === "proposed"
-                ? "pending"
-                : "spent";
+          const newStatus = getVaultRecordStatus(
+            chainResult.txStatus,
+            chainResult.liveCellStatus,
+            cached?.status
+          );
 
           const record: VaultRecord = {
             txHash,
@@ -128,6 +141,7 @@ export default function VaultDetailPage() {
       } finally {
         if (!cancelled) {
           setLoading(false);
+          setRefreshing(false);
         }
       }
     })();
@@ -135,7 +149,7 @@ export default function VaultDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [txHash, vaultIndex, network]);
+  }, [txHash, vaultIndex, network, refreshNonce]);
 
   useEffect(() => {
     if (!vault || !signer) {
@@ -152,7 +166,8 @@ export default function VaultDetailPage() {
         const isBeneficiary =
           !!vault.beneficiaryAddress &&
           userAddress.toLowerCase() === vault.beneficiaryAddress.toLowerCase();
-        const isLive = onChainData?.isLive ?? vault.status === "live";
+        const isLive =
+          onChainData?.liveCellStatus === "live" || vault.status === "live";
 
         if (!cancelled) {
           setConnectedAddress(userAddress);
@@ -175,9 +190,9 @@ export default function VaultDetailPage() {
     if (
       !vault ||
       !isUnlocked ||
+      vault.status !== "live" ||
       !vault.beneficiaryEmail ||
-      vault.claimableEmailSent ||
-      vault.status === "spent"
+      vault.claimableEmailSent
     ) {
       return;
     }
@@ -217,32 +232,17 @@ export default function VaultDetailPage() {
         { txHash: vault.txHash, index: vault.index },
         vault.unlock,
         vault.beneficiaryAddress,
+        vault.network,
         vault.format ?? "legacy"
       );
 
       const claimTxHash = await signAndSendTransaction(
         signer,
         result.tx,
-        result.requiresSignature
+        result.requiresSignature,
+        vault.network
       );
-
-      const updated = {
-        ...vault,
-        status: "spent" as const,
-      };
-
-      setVault(updated);
       setCanClaim(false);
-      setOnChainData((previous) =>
-        previous
-          ? {
-              ...previous,
-              isLive: false,
-              txStatus: "committed",
-            }
-          : previous
-      );
-      updateVault(updated);
       setSuccessTxHash(claimTxHash);
     } catch (err: any) {
       console.error("Failed to claim vault:", err);
@@ -311,9 +311,12 @@ export default function VaultDetailPage() {
     );
   }
 
-  const explorerUrl = `${NETWORK_CONFIGS[vault.network].explorerTxUrl}${vault.txHash}`;
+  const explorerUrl = getExplorerTransactionUrl(vault.network, vault.txHash);
   const badge = formatBadge(vault);
-  const isLive = onChainData?.isLive ?? vault.status === "live";
+  const claimSubmissionPending = !!successTxHash && vault.status === "live";
+  const liveCellStatus = onChainData?.liveCellStatus;
+  const isLive =
+    liveCellStatus != null ? liveCellStatus === "live" : vault.status === "live";
   const beneficiaryMatches =
     !!connectedAddress &&
     !!vault.beneficiaryAddress &&
@@ -334,6 +337,18 @@ export default function VaultDetailPage() {
         ? {
             title: "Awaiting confirmation",
             body: "This vault has been submitted, but the claim panel will stay unavailable until the chain confirms it as live.",
+            tone: "status-banner-warning",
+          }
+      : claimSubmissionPending
+        ? {
+            title: "Claim submitted",
+            body: "The claim transaction has been broadcast. Refresh this page after confirmation to see the vault marked as spent.",
+            tone: "status-banner-warning",
+          }
+      : vault.status === "unknown"
+        ? {
+            title: "Status unavailable",
+            body: "The vault transaction was found, but the live/spent state could not be confirmed from the chain right now.",
             tone: "status-banner-warning",
           }
       : canClaim
@@ -363,7 +378,12 @@ export default function VaultDetailPage() {
     {
       label: "Vault is still live on-chain",
       met: isLive,
-      detail: isLive ? "Cell is unspent." : "Cell has already been spent.",
+      detail:
+        liveCellStatus === "unknown" || vault.status === "unknown"
+          ? "Chain state is temporarily unavailable."
+          : isLive
+            ? "Cell is unspent."
+            : "Cell has already been spent.",
     },
     {
       label: "Unlock condition is satisfied",
@@ -396,12 +416,20 @@ export default function VaultDetailPage() {
       detail:
         vault.status === "spent"
           ? "Funds have already moved."
+          : claimSubmissionPending
+            ? "Claim transaction submitted."
+          : vault.status === "unknown"
+            ? "Waiting on a reliable chain refresh."
           : canClaim
             ? "Ready for claim submission."
             : "Waiting for the final requirements.",
       state:
         vault.status === "spent"
           ? "Complete"
+          : claimSubmissionPending
+            ? "Awaiting confirmation"
+          : vault.status === "unknown"
+            ? "Unavailable"
           : canClaim
             ? "Ready"
             : "In progress",
@@ -414,14 +442,24 @@ export default function VaultDetailPage() {
         <Link to="/vaults" className="inline-link">
           {"<- Back to Vaults"}
         </Link>
-        <a
-          href={explorerUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="button-secondary"
-        >
-          View on Explorer
-        </a>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <button
+            type="button"
+            className="button-ghost"
+            onClick={() => setRefreshNonce((value) => value + 1)}
+            disabled={refreshing}
+          >
+            {refreshing ? "Refreshing..." : "Refresh Status"}
+          </button>
+          <a
+            href={explorerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="button-secondary"
+          >
+            View on Explorer
+          </a>
+        </div>
       </div>
 
       <section className="panel-strong">
@@ -445,6 +483,8 @@ export default function VaultDetailPage() {
                   ? "status-banner-danger"
                   : vault.status === "pending"
                     ? "status-banner-warning"
+                    : vault.status === "unknown"
+                      ? "status-banner-warning"
                     : "status-banner-neutral"
               }`}
             >
@@ -452,7 +492,9 @@ export default function VaultDetailPage() {
                 ? "Live"
                 : vault.status === "pending"
                   ? "Pending"
-                  : "Spent"}
+                  : vault.status === "unknown"
+                    ? "Unknown"
+                    : "Spent"}
             </div>
           </div>
         </div>
@@ -462,7 +504,7 @@ export default function VaultDetailPage() {
         <div className="status-banner status-banner-success mt-6">
           Claim transaction sent successfully.{" "}
           <a
-            href={`${NETWORK_CONFIGS[vault.network].explorerTxUrl}${successTxHash}`}
+            href={getExplorerTransactionUrl(vault.network, successTxHash)}
             target="_blank"
             rel="noopener noreferrer"
             className="font-semibold underline"
@@ -650,7 +692,7 @@ export default function VaultDetailPage() {
                 </div>
               )}
 
-              {canClaim && vault.status === "live" && (
+              {canClaim && vault.status === "live" && !claimSubmissionPending && (
                 <button
                   className="button-primary"
                   onClick={handleClaim}
@@ -661,7 +703,16 @@ export default function VaultDetailPage() {
                 </button>
               )}
 
-              {!canClaim && wallet && vault.status === "live" && (
+              {claimSubmissionPending && vault.status === "live" && (
+                <button className="button-secondary" disabled>
+                  Claim Submitted - Awaiting Confirmation
+                </button>
+              )}
+
+              {!canClaim &&
+                wallet &&
+                vault.status === "live" &&
+                !claimSubmissionPending && (
                 <button className="button-secondary" disabled>
                   {!isUnlocked
                     ? "Vault Is Still Locked"

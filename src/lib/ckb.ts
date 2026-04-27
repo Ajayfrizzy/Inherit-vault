@@ -5,19 +5,63 @@
 import type {
   CkbCell,
   CkbTransactionStatus,
+  LiveCellStatus,
   OutPoint,
   TipHeader,
 } from "../types";
 import { NETWORK_CONFIGS, type Network } from "../config";
 
+interface JsonRpcError {
+  message?: string;
+}
+
+interface JsonRpcResponse<T> {
+  result: T;
+  error?: JsonRpcError;
+}
+
+interface RpcLiveCellResponse {
+  status?: "live" | "dead" | "unknown";
+  cell?: {
+    output?: CkbCell["output"];
+    data?: {
+      content?: string;
+    };
+  };
+}
+
+interface RpcTipHeader {
+  number: string;
+  timestamp: string;
+}
+
+interface RpcHeader {
+  timestamp?: string;
+}
+
+interface ClientScriptLike {
+  codeHash: string;
+  hashType: CkbCell["output"]["lock"]["hash_type"];
+  args: string;
+}
+
+interface ClientCellLike {
+  cellOutput: {
+    capacity: bigint;
+    lock: ClientScriptLike;
+    type?: ClientScriptLike | null;
+  };
+  outputData?: string;
+}
+
 /**
  * Simple JSON-RPC helper for CKB node.
  */
-async function rpcCall(
+async function rpcCall<T>(
   url: string,
   method: string,
   params: unknown[]
-): Promise<any> {
+): Promise<T> {
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -28,14 +72,14 @@ async function rpcCall(
       params,
     }),
   });
-  const json = await response.json();
+  const json = (await response.json()) as JsonRpcResponse<T>;
   if (json.error) {
     throw new Error(json.error.message || "RPC Error");
   }
   return json.result;
 }
 
-async function getPublicClient(network: Network): Promise<any> {
+async function getPublicClient(network: Network) {
   const { ccc } = await import("@ckb-ccc/connector-react");
   return network === "testnet"
     ? new ccc.ClientPublicTestnet()
@@ -53,8 +97,7 @@ function toRpcOutPoint(outPoint: OutPoint) {
   };
 }
 
-function normalizeScript(script: any) {
-  if (!script) return null;
+function normalizeRequiredScript(script: ClientScriptLike): CkbCell["output"]["lock"] {
   return {
     code_hash: script.codeHash,
     hash_type: script.hashType,
@@ -62,26 +105,55 @@ function normalizeScript(script: any) {
   };
 }
 
-function normalizeCellOutput(output: any) {
+function normalizeOptionalScript(script: ClientScriptLike | null | undefined) {
+  if (!script) return null;
+  return normalizeRequiredScript(script);
+}
+
+function normalizeCellOutput(output: ClientCellLike["cellOutput"]): CkbCell["output"] {
   return {
     capacity: toRpcHex(output.capacity),
-    lock: normalizeScript(output.lock),
-    type: normalizeScript(output.type),
+    lock: normalizeRequiredScript(output.lock),
+    type: normalizeOptionalScript(output.type),
   };
+}
+
+function normalizeTransactionStatus(
+  status: string
+): CkbTransactionStatus["tx_status"]["status"] {
+  if (status === "pending" || status === "proposed" || status === "committed") {
+    return status;
+  }
+  if (status === "rejected") {
+    return "rejected";
+  }
+  if (status === "sent") {
+    return "pending";
+  }
+  return "unknown";
 }
 
 function normalizeTransactionResponse(
   txHash: string,
-  response: any
+  response: {
+    transaction: {
+      outputs: ClientCellLike["cellOutput"][];
+      outputsData: Array<string | undefined>;
+    };
+    status: string;
+    blockHash?: string | null;
+    blockNumber?: bigint | number | null;
+    reason?: string | null;
+  }
 ): CkbTransactionStatus {
   return {
     transaction: {
       hash: txHash,
       outputs: response.transaction.outputs.map(normalizeCellOutput),
-      outputs_data: response.transaction.outputsData.map((data: string) => data ?? "0x"),
+      outputs_data: response.transaction.outputsData.map((data) => data ?? "0x"),
     },
     tx_status: {
-      status: response.status,
+      status: normalizeTransactionStatus(response.status),
       block_hash: response.blockHash ?? null,
       block_number: response.blockNumber != null ? toRpcHex(response.blockNumber) : null,
       reason: response.reason ?? null,
@@ -89,7 +161,10 @@ function normalizeTransactionResponse(
   };
 }
 
-function normalizeLiveCell(outPoint: OutPoint, liveCell: any): CkbCell | null {
+function normalizeLiveCell(
+  outPoint: OutPoint,
+  liveCell: RpcLiveCellResponse
+): CkbCell | null {
   if (liveCell?.status !== "live" || !liveCell.cell?.output) {
     return null;
   }
@@ -101,12 +176,23 @@ function normalizeLiveCell(outPoint: OutPoint, liveCell: any): CkbCell | null {
   };
 }
 
+function normalizeClientLiveCell(
+  outPoint: OutPoint,
+  liveCell: ClientCellLike
+): CkbCell {
+  return {
+    output: normalizeCellOutput(liveCell.cellOutput),
+    output_data: liveCell.outputData ?? "0x",
+    out_point: toRpcOutPoint(outPoint),
+  };
+}
+
 /**
  * Get the current tip header (block number + timestamp).
  */
 export async function getTipHeader(network: Network): Promise<TipHeader> {
   const { rpcUrl } = NETWORK_CONFIGS[network];
-  const header = await rpcCall(rpcUrl, "get_tip_header", []);
+  const header = await rpcCall<RpcTipHeader>(rpcUrl, "get_tip_header", []);
   return {
     blockNumber: parseInt(header.number, 16),
     timestamp: parseInt(header.timestamp, 16) / 1000, // CKB stores milliseconds
@@ -122,7 +208,7 @@ export async function getBlockTimestampByHash(
   blockHash: string
 ): Promise<number | null> {
   const { rpcUrl } = NETWORK_CONFIGS[network];
-  const header = await rpcCall(rpcUrl, "get_header", [blockHash]);
+  const header = await rpcCall<RpcHeader>(rpcUrl, "get_header", [blockHash]);
   if (!header?.timestamp) return null;
 
   return parseInt(header.timestamp, 16) / 1000;
@@ -160,43 +246,48 @@ export async function getCellByOutPoint(
 ): Promise<CkbCell | null> {
   try {
     const { rpcUrl } = NETWORK_CONFIGS[network];
-    const liveCell = await rpcCall(rpcUrl, "get_live_cell", [
+    const liveCell = await rpcCall<RpcLiveCellResponse>(rpcUrl, "get_live_cell", [
       toRpcOutPoint(outPoint),
       true,
     ]);
     return normalizeLiveCell(outPoint, liveCell);
   } catch {
-    return getCellByOutPointViaTransaction(network, outPoint);
+    try {
+      const client = await getPublicClient(network);
+      const liveCell = await client.getCellLive(outPoint, true, true);
+      return liveCell ? normalizeClientLiveCell(outPoint, liveCell) : null;
+    } catch {
+      return null;
+    }
   }
 }
 
-/**
- * Fallback: inspect the output in the originating transaction via CCC/RPC.
- */
-async function getCellByOutPointViaTransaction(
+export async function getLiveCellStatus(
   network: Network,
   outPoint: OutPoint
-): Promise<CkbCell | null> {
+): Promise<LiveCellStatus> {
   try {
-    const txStatus = await getTransactionStatus(network, outPoint.txHash);
+    const { rpcUrl } = NETWORK_CONFIGS[network];
+    const liveCell = await rpcCall<RpcLiveCellResponse>(rpcUrl, "get_live_cell", [
+      toRpcOutPoint(outPoint),
+      true,
+    ]);
 
-    if (!txStatus.transaction) {
-      return null;
+    if (liveCell.status === "live") {
+      return "live";
     }
-
-    const output = txStatus.transaction.outputs[outPoint.index];
-    const outputData = txStatus.transaction.outputs_data[outPoint.index];
-    if (!output) {
-      return null;
+    if (liveCell.status === "dead") {
+      return "spent";
     }
-
-    return {
-      output,
-      output_data: outputData || "0x",
-      out_point: toRpcOutPoint(outPoint),
-    };
+    return "unknown";
   } catch {
-    return null;
+    try {
+      const client = await getPublicClient(network);
+      const liveCell = await client.getCellLive(outPoint, true, true);
+      return liveCell ? "live" : "unknown";
+    } catch {
+      return "unknown";
+    }
   }
 }
 
@@ -207,15 +298,5 @@ export async function isCellLive(
   network: Network,
   outPoint: OutPoint
 ): Promise<boolean> {
-  const { rpcUrl } = NETWORK_CONFIGS[network];
-
-  try {
-    const result = await rpcCall(rpcUrl, "get_live_cell", [
-      toRpcOutPoint(outPoint),
-      true,
-    ]);
-    return result.status === "live";
-  } catch {
-    return false;
-  }
+  return (await getLiveCellStatus(network, outPoint)) === "live";
 }

@@ -215,11 +215,17 @@ export async function buildClaimVaultTransaction(
   vaultOutPoint: { txHash: string; index: number },
   unlock: UnlockCondition,
   beneficiaryAddress: string,
+  network: Network,
   format: VaultFormat = "legacy"
 ): Promise<{ tx: any; requiresSignature: boolean }> {
   try {
     const { ccc } = await import("@ckb-ccc/connector-react");
-    const network = getNetworkFromClient(signer.client);
+    const signerNetwork = getNetworkFromClient(signer.client);
+    if (signerNetwork !== network) {
+      throw new Error(
+        `Connected wallet is on ${signerNetwork}, but this vault belongs to ${network}. Switch networks and try again.`
+      );
+    }
     const since = buildAbsoluteSince(ccc, unlock);
 
     const vaultCell = await signer.client.getCell({
@@ -305,7 +311,8 @@ export async function buildClaimVaultTransaction(
 export async function signAndSendTransaction(
   signer: any,
   tx: any,
-  requiresSignature = true
+  requiresSignature = true,
+  network?: Network
 ): Promise<string> {
   try {
     if (requiresSignature) {
@@ -315,9 +322,9 @@ export async function signAndSendTransaction(
     // Scripted claims don't require wallet signatures, so broadcast them
     // directly through a public RPC client to avoid wallet-specific tx rewriting.
     const { ccc } = await import("@ckb-ccc/connector-react");
-    const network = getNetworkFromClient(signer.client);
+    const resolvedNetwork = network ?? getNetworkFromClient(signer.client);
     const publicClient =
-      network === "testnet"
+      resolvedNetwork === "testnet"
         ? new ccc.ClientPublicTestnet()
         : new ccc.ClientPublicMainnet();
 

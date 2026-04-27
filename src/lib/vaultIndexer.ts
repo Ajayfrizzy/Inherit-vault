@@ -6,8 +6,10 @@ import { getIndexerUrls, isVaultScriptsReady, type Network } from "../config";
 import type {
   CkbCellOutput,
   CkbScript,
+  LiveCellStatus,
   VaultAuthenticity,
   VaultFormat,
+  VaultRecordStatus,
 } from "../types";
 import {
   getAddressFromCccScript,
@@ -16,7 +18,7 @@ import {
 } from "./ccc";
 import {
   getBlockTimestampByHash,
-  getCellByOutPoint,
+  getLiveCellStatus,
   getTransactionStatus,
 } from "./ckb";
 import {
@@ -49,12 +51,37 @@ export interface VaultFromTx {
   beneficiaryAddress: string;
   data: VaultCellPayload;
   txStatus: "pending" | "proposed" | "committed" | "rejected" | "unknown";
+  liveCellStatus: LiveCellStatus;
   isLive: boolean;
   blockNumber?: number;
   blockTimestamp?: number;
   format: VaultFormat;
   authenticity: VaultAuthenticity;
   isAuthentic: boolean;
+}
+
+export function getVaultRecordStatus(
+  txStatus: VaultFromTx["txStatus"],
+  liveCellStatus: LiveCellStatus,
+  fallbackStatus?: VaultRecordStatus
+): VaultRecordStatus {
+  if (txStatus === "pending" || txStatus === "proposed") {
+    return "pending";
+  }
+
+  if (txStatus !== "committed") {
+    return fallbackStatus ?? "unknown";
+  }
+
+  if (liveCellStatus === "live") {
+    return "live";
+  }
+
+  if (liveCellStatus === "spent") {
+    return "spent";
+  }
+
+  return "unknown";
 }
 
 function capacityHexToCkb(capacityHex: string): string {
@@ -120,9 +147,8 @@ async function parseVaultFromTransactionOutput(
   output: CkbCellOutput,
   outputData: string,
   txStatus: VaultFromTx["txStatus"],
-  isLive: boolean,
-  blockNumber?: number
-  ,
+  liveCellStatus: LiveCellStatus,
+  blockNumber?: number,
   blockTimestamp?: number
 ): Promise<VaultFromTx | null> {
   const decoded = decodeVaultCellData(outputData);
@@ -142,7 +168,8 @@ async function parseVaultFromTransactionOutput(
     beneficiaryAddress,
     data: await hydrateVaultPayload(network, decoded),
     txStatus,
-    isLive,
+    liveCellStatus,
+    isLive: liveCellStatus === "live",
     blockNumber,
     blockTimestamp,
     format: scripted ? "scripted" : "legacy",
@@ -257,10 +284,10 @@ export async function fetchVaultFromTransaction(
   if (!output || outputData === undefined) return null;
 
   const txStatus = txResult.tx_status?.status ?? "unknown";
-  const liveCell =
+  const liveCellStatus =
     txStatus === "committed"
-      ? await getCellByOutPoint(network, { txHash, index })
-      : null;
+      ? await getLiveCellStatus(network, { txHash, index })
+      : "unknown";
   const blockTimestamp =
     txResult.tx_status?.block_hash && txStatus === "committed"
       ? await getBlockTimestampByHash(network, txResult.tx_status.block_hash).catch(
@@ -275,7 +302,7 @@ export async function fetchVaultFromTransaction(
     output,
     outputData,
     txStatus,
-    liveCell !== null,
+    liveCellStatus,
     txResult.tx_status?.block_number
       ? parseInt(txResult.tx_status.block_number, 16)
       : undefined,

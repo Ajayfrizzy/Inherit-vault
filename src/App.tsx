@@ -6,17 +6,17 @@ import CreateVaultPage from "./pages/CreateVaultPage";
 import VaultListPage from "./pages/VaultListPage";
 import VaultDetailPage from "./pages/VaultDetailPage";
 import BeneficiaryPage from "./pages/BeneficiaryPage";
-import { DEFAULT_NETWORK, NETWORK_CONFIGS } from "./config";
+import { getActiveNetwork, getNetworkLabel } from "./lib/network";
 
 export default function App() {
-  const { open, wallet, disconnect } = ccc.useCcc();
+  const { open, wallet, disconnect, client } = ccc.useCcc();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navItems = [
     { to: "/create", label: "Create Vault" },
     { to: "/vaults", label: "My Vaults" },
     { to: "/beneficiary", label: "Beneficiary" },
   ];
-  const networkLabel = NETWORK_CONFIGS[DEFAULT_NETWORK].label;
+  const networkLabel = getNetworkLabel(getActiveNetwork(client));
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
