@@ -41,6 +41,14 @@
     font: inherit;
   }
 
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
   ::selection {
     background: rgba(0, 212, 170, 0.22);
     color: #f8fffd;
